@@ -100,9 +100,28 @@ export default function ClinicianConsolidationTool() {
     try {
       const result = await parseFile(file, fileType);
 
+      // Check for duplicate CPSOs in Geo-Spatial LDG
+      let fileWarnings = [...result.warnings];
+      if (fileType === 'geoSpatial' && result.data.length > 0) {
+        const cpsoCount = {};
+        result.data.forEach(row => {
+          const cpso = String(row['CPSO'] || '').replace(/\s/g, '').trim();
+          if (cpso) {
+            cpsoCount[cpso] = (cpsoCount[cpso] || 0) + 1;
+          }
+        });
+
+        const duplicateCPSOs = Object.entries(cpsoCount).filter(([_, count]) => count > 1);
+        const totalDuplicateRows = duplicateCPSOs.reduce((sum, [_, count]) => sum + count, 0);
+
+        if (duplicateCPSOs.length > 0) {
+          fileWarnings.push(`${totalDuplicateRows} rows contain duplicate CPSOs (${duplicateCPSOs.length} unique CPSOs appear multiple times). Last occurrence will be used for lookups.`);
+        }
+      }
+
       setFiles(prev => ({ ...prev, [fileType]: file }));
       setData(prev => ({ ...prev, [fileType]: result.data }));
-      setWarnings(prev => ({ ...prev, [fileType]: result.warnings }));
+      setWarnings(prev => ({ ...prev, [fileType]: fileWarnings }));
       setIsProcessed(false);
 
       // If Geo-Spatial LDG, extract unique specialties for mapping
@@ -559,31 +578,46 @@ export default function ClinicianConsolidationTool() {
     const file = files[fileType];
     const fileWarnings = warnings[fileType];
     const recordCount = data[fileType].length;
+    const hasWarnings = fileWarnings && fileWarnings.length > 0;
+
+    // Determine colors based on file state and warnings
+    const cardStyle = !file
+      ? 'border-gray-300 hover:border-blue-400'
+      : hasWarnings
+        ? 'border-yellow-400 bg-yellow-50'
+        : 'border-green-400 bg-green-50';
+
+    const iconColor = !file
+      ? 'text-gray-400'
+      : hasWarnings
+        ? 'text-yellow-600'
+        : 'text-green-600';
+
+    const statusColor = hasWarnings ? 'text-yellow-700' : 'text-green-700';
 
     return (
-      <div className={`border-2 border-dashed rounded-lg p-4 transition-all ${
-        file ? 'border-green-400 bg-green-50' : 'border-gray-300 hover:border-blue-400'
-      }`}>
+      <div className={`border-2 border-dashed rounded-lg p-4 transition-all ${cardStyle}`}>
         <div className="flex items-start gap-3">
-          <FileSpreadsheet className={`w-8 h-8 ${file ? 'text-green-600' : 'text-gray-400'}`} />
+          <FileSpreadsheet className={`w-8 h-8 ${iconColor}`} />
           <div className="flex-1">
             <h3 className="font-semibold text-gray-800">{label}</h3>
             <p className="text-sm text-gray-500 mb-2">{description}</p>
 
             {file ? (
               <div className="space-y-1">
-                <div className="flex items-center gap-2 text-green-700">
-                  <CheckCircle className="w-4 h-4" />
+                <div className={`flex items-center gap-2 ${statusColor}`}>
+                  {hasWarnings ? (
+                    <AlertTriangle className="w-4 h-4" />
+                  ) : (
+                    <CheckCircle className="w-4 h-4" />
+                  )}
                   <span className="text-sm font-medium">{file.name}</span>
                 </div>
                 <p className="text-sm text-gray-600">{recordCount.toLocaleString()} records loaded</p>
-                {fileWarnings.length > 0 && (
-                  <div className="mt-2 p-2 bg-yellow-50 rounded border border-yellow-200">
-                    <div className="flex items-start gap-2">
-                      <AlertTriangle className="w-4 h-4 text-yellow-600 mt-0.5" />
-                      <div className="text-sm text-yellow-800">
-                        {fileWarnings.map((w, i) => <p key={i}>{w}</p>)}
-                      </div>
+                {hasWarnings && (
+                  <div className="mt-2 p-2 bg-yellow-100 rounded border border-yellow-300">
+                    <div className="text-sm text-yellow-800">
+                      {fileWarnings.map((w, i) => <p key={i}>{w}</p>)}
                     </div>
                   </div>
                 )}
