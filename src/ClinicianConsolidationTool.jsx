@@ -46,7 +46,7 @@ export default function ClinicianConsolidationTool() {
     geoSpatial: ['CPSO', 'e-Referral', 'Hospital', 'Postal Code', 'Lead/Reach', 'Region', 'LDG', 'LDG Lead Org', 'Specialty', 'Type of Specialty'],
     regionalAuthority: ['clinicianProfessionalId', 'clinicianFirstName', 'clinicianSurname', 'siteNum', 'siteName', 'healthRegion', 'services', 'postalCode', 'eReferrals', 'eConsults'],
     supportSite: ['siteNum', 'siteName', 'clinicianType', 'professionalId', 'userFullName', 'username', 'referralLastSent'],
-    ldgLedger: ['First Name', 'Last Name', 'CPSO #', 'eReferral Solution', 'Ocean Site Number', 'Directory Listing Name', 'Role', 'Primary Specialty Pathway', 'Date Onboarding Completed']
+    ldgLedger: ['First Name', 'Last Name', 'CPSO #', 'eReferral Solution', 'Ocean Site Number (eReferral Ontario only)', 'Directory Listing Name (eReferral Ontario only)', 'Role (Sender, Receiver, Both)', 'Primary Specialty Pathway', 'Date Onboarding Completed']
   };
 
   // Parse uploaded file
@@ -340,8 +340,8 @@ export default function ClinicianConsolidationTool() {
       const cpso = normalizeCPSO(row['CPSO #']);
       if (!cpso) return;
 
-      const siteNum = row['Ocean Site Number'] || '';
-      const siteName = row['Directory Listing Name'] || '';
+      const siteNum = row['Ocean Site Number (eReferral Ontario only)'] || '';
+      const siteName = row['Directory Listing Name (eReferral Ontario only)'] || '';
       const geoData = geoSpatialMap.get(cpso);
       const region = geoData?.region || '';
       const key = recordKey(cpso, siteNum, region);
@@ -354,7 +354,7 @@ export default function ClinicianConsolidationTool() {
       if (existingIdx >= 0) {
         // Update existing record with LDG Ledger data
         allRecords[existingIdx].Solution_Type = row['eReferral Solution'] || allRecords[existingIdx].Solution_Type;
-        allRecords[existingIdx].Role = row['Role'] || allRecords[existingIdx].Role;
+        allRecords[existingIdx].Role = row['Role (Sender, Receiver, Both)'] || allRecords[existingIdx].Role;
         allRecords[existingIdx].Specialty_Pathway = row['Primary Specialty Pathway'] || allRecords[existingIdx].Specialty_Pathway;
         if (row['Date Onboarding Completed']) {
           const existingDate = allRecords[existingIdx].Date_Onboarded;
@@ -402,7 +402,7 @@ export default function ClinicianConsolidationTool() {
         Hospital: geoData?.hospital || '',
         Address_Postal: geoData?.postalCode || '',
         Lead_Reach: geoData?.leadReach || '',
-        Role: row['Role'] || '',
+        Role: row['Role (Sender, Receiver, Both)'] || '',
         Date_Onboarded: row['Date Onboarding Completed'] || '',
         Training_Date: 'Not Available - Regional CRM not provided',
         Last_Referral_Sent: '',
