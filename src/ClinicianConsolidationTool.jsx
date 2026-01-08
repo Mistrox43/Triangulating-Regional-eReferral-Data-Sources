@@ -107,15 +107,10 @@ export default function ClinicianConsolidationTool() {
 
       // If Geo-Spatial LDG, extract unique specialties for mapping
       if (fileType === 'geoSpatial' && result.data.length > 0) {
-        const specialties = [...new Set(result.data.map(row => row['Type of Specialty']).filter(Boolean))];
+        const specialties = [...new Set(result.data.map(row => row['Specialty']).filter(Boolean))];
         const defaultMapping = {};
         specialties.forEach(spec => {
-          const lower = spec.toLowerCase();
-          if (lower.includes('primary') || lower.includes('family') || lower.includes('general')) {
-            defaultMapping[spec] = 'primaryCare';
-          } else {
-            defaultMapping[spec] = 'specialist';
-          }
+          defaultMapping[spec] = 'specialist';
         });
         setSpecialtyMapping(defaultMapping);
       }
@@ -241,7 +236,7 @@ export default function ClinicianConsolidationTool() {
         Exclusion_Reason: '',
         In_GeoSpatial_LDG: inGeoSpatial,
         Data_Sources: inGeoSpatial ? 'Geo-Spatial,RA' : 'RA',
-        _typeOfSpecialty: geoData?.typeOfSpecialty || 'Unknown'
+        _specialty: geoData?.specialty || 'Unknown'
       };
 
       const exclusionCheck = shouldExclude({ firstName: record.First_Name, lastName: record.Last_Name }, siteName);
@@ -322,7 +317,7 @@ export default function ClinicianConsolidationTool() {
         Exclusion_Reason: '',
         In_GeoSpatial_LDG: inGeoSpatial,
         Data_Sources: inGeoSpatial ? 'Geo-Spatial,Support Site' : 'Support Site',
-        _typeOfSpecialty: geoData?.typeOfSpecialty || 'Unknown'
+        _specialty: geoData?.specialty || 'Unknown'
       };
 
       const exclusionCheck = shouldExclude({ firstName, lastName }, siteName);
@@ -412,7 +407,7 @@ export default function ClinicianConsolidationTool() {
         Exclusion_Reason: '',
         In_GeoSpatial_LDG: inGeoSpatial,
         Data_Sources: inGeoSpatial ? 'Geo-Spatial,LDG Ledger' : 'LDG Ledger',
-        _typeOfSpecialty: geoData?.typeOfSpecialty || 'Unknown'
+        _specialty: geoData?.specialty || 'Unknown'
       };
 
       allRecords.push(record);
@@ -457,24 +452,20 @@ export default function ClinicianConsolidationTool() {
     const specialist = [];
 
     allRecords.forEach(record => {
-      const typeOfSpecialty = record._typeOfSpecialty;
-      const mapping = specialtyMapping[typeOfSpecialty];
+      const specialty = record._specialty;
+      const mapping = specialtyMapping[specialty];
 
       // Remove internal field before output
       const outputRecord = { ...record };
-      delete outputRecord._typeOfSpecialty;
+      delete outputRecord._specialty;
 
       if (mapping === 'primaryCare') {
         primaryCare.push(outputRecord);
       } else if (mapping === 'specialist') {
         specialist.push(outputRecord);
       } else {
-        // Unknown specialty type - check if it looks like primary care
-        if (typeOfSpecialty && (typeOfSpecialty.toLowerCase().includes('primary') || typeOfSpecialty.toLowerCase().includes('family'))) {
-          primaryCare.push(outputRecord);
-        } else {
-          specialist.push(outputRecord);
-        }
+        // Unknown specialty - default to specialist
+        specialist.push(outputRecord);
       }
     });
 
