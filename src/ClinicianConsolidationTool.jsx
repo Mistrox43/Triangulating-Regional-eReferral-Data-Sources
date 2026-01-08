@@ -508,6 +508,26 @@ export default function ClinicianConsolidationTool() {
       ldgCounts[ldg] = (ldgCounts[ldg] || 0) + 1;
     });
 
+    // Count operational sources for merge statistics
+    const countOperationalSources = (record) => {
+      const sources = record.Data_Sources || '';
+      let count = 0;
+      if (sources.includes('RA')) count++;
+      if (sources.includes('Support Site')) count++;
+      if (sources.includes('LDG Ledger')) count++;
+      return count;
+    };
+
+    // Calculate merge counts for Primary Care
+    const primaryCareFullMerge = processedData.primaryCare.filter(r => countOperationalSources(r) === 3).length;
+    const primaryCarePartialMerge = processedData.primaryCare.filter(r => countOperationalSources(r) === 2).length;
+    const primaryCareSingleSource = processedData.primaryCare.filter(r => countOperationalSources(r) === 1).length;
+
+    // Calculate merge counts for Specialist
+    const specialistFullMerge = processedData.specialist.filter(r => countOperationalSources(r) === 3).length;
+    const specialistPartialMerge = processedData.specialist.filter(r => countOperationalSources(r) === 2).length;
+    const specialistSingleSource = processedData.specialist.filter(r => countOperationalSources(r) === 1).length;
+
     return {
       totalRecords: allRecords.length,
       totalUniqueClinicians: nonExcluded.filter(r => r.Provincial_Dedupe_Flag).length,
@@ -519,7 +539,13 @@ export default function ClinicianConsolidationTool() {
       notInGeoSpatial: allRecords.filter(r => !r.In_GeoSpatial_LDG).length,
       regionCounts,
       ldgCounts,
-      qualityIssueCount: dataQualityIssues.length
+      qualityIssueCount: dataQualityIssues.length,
+      primaryCareFullMerge,
+      primaryCarePartialMerge,
+      primaryCareSingleSource,
+      specialistFullMerge,
+      specialistPartialMerge,
+      specialistSingleSource
     };
   }, [isProcessed, processedData, dataQualityIssues]);
 
@@ -806,12 +832,24 @@ export default function ClinicianConsolidationTool() {
                 <p className="text-sm text-green-700">
                   {summary.primaryCareRecords.toLocaleString()} records ({summary.primaryCareUnique.toLocaleString()} unique clinicians)
                 </p>
+                <div className="mt-2 pt-2 border-t border-green-200">
+                  <p className="text-xs text-green-600 font-medium mb-1">Data Source Merges:</p>
+                  <p className="text-xs text-green-700">
+                    Full (3 sources): {summary.primaryCareFullMerge.toLocaleString()} | Partial (2 sources): {summary.primaryCarePartialMerge.toLocaleString()} | Single: {summary.primaryCareSingleSource.toLocaleString()}
+                  </p>
+                </div>
               </div>
               <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
                 <h3 className="font-semibold text-purple-800 mb-2">Specialist Output</h3>
                 <p className="text-sm text-purple-700">
                   {summary.specialistRecords.toLocaleString()} records ({summary.specialistUnique.toLocaleString()} unique clinicians)
                 </p>
+                <div className="mt-2 pt-2 border-t border-purple-200">
+                  <p className="text-xs text-purple-600 font-medium mb-1">Data Source Merges:</p>
+                  <p className="text-xs text-purple-700">
+                    Full (3 sources): {summary.specialistFullMerge.toLocaleString()} | Partial (2 sources): {summary.specialistPartialMerge.toLocaleString()} | Single: {summary.specialistSingleSource.toLocaleString()}
+                  </p>
+                </div>
               </div>
             </div>
 
