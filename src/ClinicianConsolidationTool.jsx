@@ -420,9 +420,17 @@ export default function ClinicianConsolidationTool() {
 
     // Sort and set dedupe flags
     allRecords.sort((a, b) => {
-      if (a.Professional_ID !== b.Professional_ID) return a.Professional_ID.localeCompare(b.Professional_ID);
-      if (a.Region !== b.Region) return a.Region.localeCompare(b.Region);
-      return a.Ocean_Site_Number.localeCompare(b.Ocean_Site_Number);
+      const pidA = String(a.Professional_ID || '');
+      const pidB = String(b.Professional_ID || '');
+      if (pidA !== pidB) return pidA.localeCompare(pidB);
+
+      const regionA = String(a.Region || '');
+      const regionB = String(b.Region || '');
+      if (regionA !== regionB) return regionA.localeCompare(regionB);
+
+      const siteA = String(a.Ocean_Site_Number || '');
+      const siteB = String(b.Ocean_Site_Number || '');
+      return siteA.localeCompare(siteB);
     });
 
     const seenRegional = new Map(); // cpso+region -> true
