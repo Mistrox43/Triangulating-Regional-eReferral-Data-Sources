@@ -365,6 +365,154 @@ export default function ClinicianConsolidationTool() {
     return checks;
   }, []);
 
+  // Get quality issues for a single row (used for flagged export)
+  const getRowQualityIssues = useCallback((fileType, row, rowIndex, allRows) => {
+    const issues = [];
+
+    if (fileType === 'geoSpatial') {
+      const cpso = String(row['CPSO'] || '').trim();
+
+      // Check blank CPSO
+      if (!cpso) {
+        issues.push('Blank CPSO');
+      }
+
+      // Check non-numeric CPSO
+      if (cpso && !/^\d+$/.test(cpso)) {
+        issues.push('Non-numeric CPSO');
+      }
+
+      // Check duplicate CPSO (need to build count map)
+      if (cpso) {
+        const normalizedCpso = cpso.replace(/\s/g, '');
+        const duplicateCount = allRows.filter(r =>
+          String(r['CPSO'] || '').replace(/\s/g, '').trim() === normalizedCpso
+        ).length;
+        if (duplicateCount > 1) {
+          issues.push('Duplicate CPSO');
+        }
+      }
+
+      // Check blank Specialty
+      if (!String(row['Specialty'] || '').trim()) {
+        issues.push('Blank Specialty');
+      }
+
+      // Check blank Region
+      if (!String(row['Region'] || '').trim()) {
+        issues.push('Blank Region');
+      }
+
+      // Check blank LDG
+      if (!String(row['LDG'] || '').trim()) {
+        issues.push('Blank LDG');
+      }
+
+    } else if (fileType === 'regionalAuthority') {
+      const profId = String(row['clinicianProfessionalId'] || '').trim();
+
+      // Check blank Professional ID
+      if (!profId) {
+        issues.push('Blank Professional ID');
+      }
+
+      // Check non-numeric Professional ID
+      if (profId && !/^\d+$/.test(profId)) {
+        issues.push('Non-numeric Professional ID');
+      }
+
+      // Check blank siteNum
+      if (!String(row['siteNum'] || '').trim()) {
+        issues.push('Blank Site Number');
+      }
+
+      // Check blank healthRegion
+      if (!String(row['healthRegion'] || '').trim()) {
+        issues.push('Blank Health Region');
+      }
+
+    } else if (fileType === 'supportSite') {
+      const profId = String(row['professionalId'] || '').trim();
+
+      // Check blank Professional ID
+      if (!profId) {
+        issues.push('Blank Professional ID');
+      }
+
+      // Check non-numeric Professional ID
+      if (profId && !/^\d+$/.test(profId)) {
+        issues.push('Non-numeric Professional ID');
+      }
+
+      // Check blank siteNum
+      if (!String(row['siteNum'] || '').trim()) {
+        issues.push('Blank Site Number');
+      }
+
+      // Check blank referralLastSent
+      if (!String(row['referralLastSent'] || '').trim()) {
+        issues.push('Blank Last Referral Sent');
+      }
+
+    } else if (fileType === 'ldgLedger') {
+      const cpso = String(row['CPSO #'] || '').trim();
+
+      // Check blank CPSO #
+      if (!cpso) {
+        issues.push('Blank CPSO #');
+      }
+
+      // Check non-numeric CPSO #
+      if (cpso && !/^\d+$/.test(cpso)) {
+        issues.push('Non-numeric CPSO #');
+      }
+
+      // Check blank Ocean Site Number
+      if (!String(row['Ocean Site Number (eReferral Ontario only)'] || '').trim()) {
+        issues.push('Blank Ocean Site Number');
+      }
+
+      // Check blank Date Onboarding Completed
+      if (!String(row['Date Onboarding Completed'] || '').trim()) {
+        issues.push('Blank Onboarding Date');
+      }
+
+      // Check blank Primary Specialty Pathway
+      if (!String(row['Primary Specialty Pathway'] || '').trim()) {
+        issues.push('Blank Specialty Pathway');
+      }
+    }
+
+    return issues;
+  }, []);
+
+  // Export data with quality flags
+  const exportWithQualityFlags = useCallback((fileType) => {
+    const rows = data[fileType];
+    const file = files[fileType];
+    if (!rows || rows.length === 0 || !file) return;
+
+    // Build enhanced data with quality flag columns
+    const enhancedData = rows.map((row, idx) => {
+      const issues = getRowQualityIssues(fileType, row, idx, rows);
+      return {
+        ...row,
+        'Row_Contains_Data_Quality_Issue': issues.length > 0 ? 'TRUE' : 'FALSE',
+        'Data_Quality_Issue_Description': issues.join('; ')
+      };
+    });
+
+    // Generate filename
+    const originalName = file.name.replace(/\.[^/.]+$/, ''); // Remove extension
+    const filename = `${originalName}_QualityFlags`;
+
+    // Export using XLSX
+    const ws = XLSX.utils.json_to_sheet(enhancedData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Data');
+    XLSX.writeFile(wb, `${filename}.xlsx`);
+  }, [data, files, getRowQualityIssues]);
+
   // Handle file upload
   const handleFileUpload = useCallback(async (fileType, file) => {
     if (!file) return;
@@ -1027,6 +1175,15 @@ export default function ClinicianConsolidationTool() {
                         ))}
                       </div>
                     )}
+
+                    {/* Download with Quality Flags Button */}
+                    <button
+                      onClick={() => exportWithQualityFlags(fileType)}
+                      className="mt-2 flex items-center gap-1 text-xs px-3 py-1.5 bg-blue-100 text-blue-700 rounded border border-blue-300 hover:bg-blue-200 transition"
+                    >
+                      <Download className="w-3 h-3" />
+                      <span>Download with Quality Flags</span>
+                    </button>
                   </div>
                 )}
               </div>
