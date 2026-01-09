@@ -28,6 +28,14 @@ export default function ClinicianConsolidationTool() {
     ldgLedger: []
   });
 
+  // Pre-processing quality checks state
+  const [qualityChecks, setQualityChecks] = useState({
+    geoSpatial: null,
+    regionalAuthority: null,
+    supportSite: null,
+    ldgLedger: null
+  });
+
   // Processing state
   const [isProcessed, setIsProcessed] = useState(false);
   const [processedData, setProcessedData] = useState({ primaryCare: [], specialist: [] });
@@ -100,28 +108,22 @@ export default function ClinicianConsolidationTool() {
     try {
       const result = await parseFile(file, fileType);
 
-      // Check for duplicate CPSOs in Geo-Spatial LDG
+      // Run comprehensive quality checks
+      const checks = runQualityChecks(fileType, result.data);
+
+      // Build warning messages from quality checks for backward compatibility
       let fileWarnings = [...result.warnings];
-      if (fileType === 'geoSpatial' && result.data.length > 0) {
-        const cpsoCount = {};
-        result.data.forEach(row => {
-          const cpso = String(row['CPSO'] || '').replace(/\s/g, '').trim();
-          if (cpso) {
-            cpsoCount[cpso] = (cpsoCount[cpso] || 0) + 1;
-          }
-        });
-
-        const duplicateCPSOs = Object.entries(cpsoCount).filter(([_, count]) => count > 1);
-        const totalDuplicateRows = duplicateCPSOs.reduce((sum, [_, count]) => sum + count, 0);
-
-        if (duplicateCPSOs.length > 0) {
-          fileWarnings.push(`${totalDuplicateRows} rows contain duplicate CPSOs (${duplicateCPSOs.length} unique CPSOs appear multiple times). Last occurrence will be used for lookups.`);
-        }
-      }
+      checks.critical.forEach(issue => {
+        fileWarnings.push(`Critical: ${issue.label} (${issue.count} rows) - ${issue.impact}`);
+      });
+      checks.warnings.forEach(issue => {
+        fileWarnings.push(`Warning: ${issue.label} (${issue.count} rows) - ${issue.impact}`);
+      });
 
       setFiles(prev => ({ ...prev, [fileType]: file }));
       setData(prev => ({ ...prev, [fileType]: result.data }));
       setWarnings(prev => ({ ...prev, [fileType]: fileWarnings }));
+      setQualityChecks(prev => ({ ...prev, [fileType]: checks }));
       setIsProcessed(false);
 
       // If Geo-Spatial LDG, extract unique specialties for mapping
@@ -136,7 +138,7 @@ export default function ClinicianConsolidationTool() {
     } catch (error) {
       alert(`Error loading file: ${error.message}`);
     }
-  }, [parseFile]);
+  }, [parseFile, runQualityChecks]);
 
   // Normalize CPSO (strip spaces)
   const normalizeCPSO = (cpso) => {
@@ -152,6 +154,210 @@ export default function ClinicianConsolidationTool() {
     const lastName = parts.slice(1).join(' ') || '';
     return { firstName, lastName };
   };
+
+  // Quality check functions for each file type
+  const runQualityChecks = useCallback((fileType, rows) => {
+    const checks = { critical: [], warnings: [], summary: { totalRows: rows.length } };
+
+    if (fileType === 'geoSpatial') {
+      // Critical: Blank CPSO
+      const blankCPSO = rows.filter(r => !String(r['CPSO'] || '').trim());
+      if (blankCPSO.length > 0) {
+        checks.critical.push({
+          type: 'BLANK_CPSO',
+          label: 'Blank CPSO values',
+          count: blankCPSO.length,
+          impact: 'These rows cannot be used for lookups and will be ignored during processing.',
+          sampleRows: blankCPSO.slice(0, 3).map((r, i) => `Row ${rows.indexOf(r) + 2}`)
+        });
+      }
+
+      // Warning: Duplicate CPSOs
+      const cpsoCount = {};
+      rows.forEach((row, idx) => {
+        const cpso = String(row['CPSO'] || '').replace(/\s/g, '').trim();
+        if (cpso) {
+          if (!cpsoCount[cpso]) cpsoCount[cpso] = [];
+          cpsoCount[cpso].push(idx + 2);
+        }
+      });
+      const duplicates = Object.entries(cpsoCount).filter(([_, indices]) => indices.length > 1);
+      if (duplicates.length > 0) {
+        const totalDupeRows = duplicates.reduce((sum, [_, indices]) => sum + indices.length, 0);
+        checks.warnings.push({
+          type: 'DUPLICATE_CPSO',
+          label: 'Duplicate CPSO values',
+          count: totalDupeRows,
+          uniqueCount: duplicates.length,
+          impact: 'Last occurrence of each duplicate CPSO will be used for lookups. Earlier occurrences will be ignored.',
+          sampleRows: duplicates.slice(0, 3).map(([cpso, indices]) => `CPSO ${cpso}: rows ${indices.join(', ')}`)
+        });
+      }
+
+      // Warning: Blank Specialty
+      const blankSpecialty = rows.filter(r => !String(r['Specialty'] || '').trim());
+      if (blankSpecialty.length > 0) {
+        checks.warnings.push({
+          type: 'BLANK_SPECIALTY',
+          label: 'Blank Specialty values',
+          count: blankSpecialty.length,
+          impact: 'Records will default to Specialist output file. Specialty mapping may be affected.',
+          sampleRows: blankSpecialty.slice(0, 3).map(r => `CPSO ${r['CPSO'] || 'N/A'}`)
+        });
+      }
+
+      // Warning: Blank Region
+      const blankRegion = rows.filter(r => !String(r['Region'] || '').trim());
+      if (blankRegion.length > 0) {
+        checks.warnings.push({
+          type: 'BLANK_REGION',
+          label: 'Blank Region values',
+          count: blankRegion.length,
+          impact: 'Region field in output will be empty for these clinicians unless provided by other source files.',
+          sampleRows: blankRegion.slice(0, 3).map(r => `CPSO ${r['CPSO'] || 'N/A'}`)
+        });
+      }
+
+      // Warning: Blank LDG
+      const blankLDG = rows.filter(r => !String(r['LDG'] || '').trim());
+      if (blankLDG.length > 0) {
+        checks.warnings.push({
+          type: 'BLANK_LDG',
+          label: 'Blank LDG values',
+          count: blankLDG.length,
+          impact: 'LDG Name field in output will be empty for these clinicians.',
+          sampleRows: blankLDG.slice(0, 3).map(r => `CPSO ${r['CPSO'] || 'N/A'}`)
+        });
+      }
+
+    } else if (fileType === 'regionalAuthority') {
+      // Critical: Blank clinicianProfessionalId
+      const blankCPSO = rows.filter(r => !String(r['clinicianProfessionalId'] || '').trim());
+      if (blankCPSO.length > 0) {
+        checks.critical.push({
+          type: 'BLANK_PROFESSIONAL_ID',
+          label: 'Blank Professional ID values',
+          count: blankCPSO.length,
+          impact: 'These rows will be skipped entirely - no records created.',
+          sampleRows: blankCPSO.slice(0, 3).map((r, i) => `${r['clinicianFirstName'] || ''} ${r['clinicianSurname'] || ''} (Row ${rows.indexOf(r) + 2})`.trim())
+        });
+      }
+
+      // Warning: Blank siteNum
+      const blankSite = rows.filter(r => !String(r['siteNum'] || '').trim());
+      if (blankSite.length > 0) {
+        checks.warnings.push({
+          type: 'BLANK_SITE_NUM',
+          label: 'Blank Site Number values',
+          count: blankSite.length,
+          impact: 'Record matching with other files may fail. Records may not merge properly with Support Site or LDG Ledger data.',
+          sampleRows: blankSite.slice(0, 3).map(r => `CPSO ${r['clinicianProfessionalId'] || 'N/A'}`)
+        });
+      }
+
+      // Warning: Blank healthRegion
+      const blankRegion = rows.filter(r => !String(r['healthRegion'] || '').trim());
+      if (blankRegion.length > 0) {
+        checks.warnings.push({
+          type: 'BLANK_HEALTH_REGION',
+          label: 'Blank Health Region values',
+          count: blankRegion.length,
+          impact: 'Region field in output will rely on Geo-Spatial LDG lookup only.',
+          sampleRows: blankRegion.slice(0, 3).map(r => `CPSO ${r['clinicianProfessionalId'] || 'N/A'}`)
+        });
+      }
+
+    } else if (fileType === 'supportSite') {
+      // Critical: Blank professionalId
+      const blankCPSO = rows.filter(r => !String(r['professionalId'] || '').trim());
+      if (blankCPSO.length > 0) {
+        checks.critical.push({
+          type: 'BLANK_PROFESSIONAL_ID',
+          label: 'Blank Professional ID values',
+          count: blankCPSO.length,
+          impact: 'These rows will be skipped entirely - no records created.',
+          sampleRows: blankCPSO.slice(0, 3).map(r => `${r['userFullName'] || 'Unknown'} (Row ${rows.indexOf(r) + 2})`)
+        });
+      }
+
+      // Warning: Blank siteNum
+      const blankSite = rows.filter(r => !String(r['siteNum'] || '').trim());
+      if (blankSite.length > 0) {
+        checks.warnings.push({
+          type: 'BLANK_SITE_NUM',
+          label: 'Blank Site Number values',
+          count: blankSite.length,
+          impact: 'Record matching may fail. Records may not merge properly with Regional Authority or LDG Ledger data.',
+          sampleRows: blankSite.slice(0, 3).map(r => `CPSO ${r['professionalId'] || 'N/A'}`)
+        });
+      }
+
+      // Warning: Blank referralLastSent
+      const blankLastRef = rows.filter(r => !String(r['referralLastSent'] || '').trim());
+      if (blankLastRef.length > 0) {
+        checks.warnings.push({
+          type: 'BLANK_LAST_REFERRAL',
+          label: 'Blank Last Referral Sent values',
+          count: blankLastRef.length,
+          impact: 'Last_Referral_Sent field in output will be empty for these clinicians.',
+          sampleRows: blankLastRef.slice(0, 3).map(r => `CPSO ${r['professionalId'] || 'N/A'}`)
+        });
+      }
+
+    } else if (fileType === 'ldgLedger') {
+      // Critical: Blank CPSO #
+      const blankCPSO = rows.filter(r => !String(r['CPSO #'] || '').trim());
+      if (blankCPSO.length > 0) {
+        checks.critical.push({
+          type: 'BLANK_CPSO',
+          label: 'Blank CPSO # values',
+          count: blankCPSO.length,
+          impact: 'These rows will be skipped entirely - no records created.',
+          sampleRows: blankCPSO.slice(0, 3).map(r => `${r['First Name'] || ''} ${r['Last Name'] || ''} (Row ${rows.indexOf(r) + 2})`.trim())
+        });
+      }
+
+      // Warning: Blank Ocean Site Number
+      const blankSite = rows.filter(r => !String(r['Ocean Site Number (eReferral Ontario only)'] || '').trim());
+      if (blankSite.length > 0) {
+        checks.warnings.push({
+          type: 'BLANK_SITE_NUM',
+          label: 'Blank Ocean Site Number values',
+          count: blankSite.length,
+          impact: 'Record matching may fail. Records may not merge properly with Regional Authority or Support Site data.',
+          sampleRows: blankSite.slice(0, 3).map(r => `CPSO ${r['CPSO #'] || 'N/A'}`)
+        });
+      }
+
+      // Warning: Blank Date Onboarding Completed
+      const blankDate = rows.filter(r => !String(r['Date Onboarding Completed'] || '').trim());
+      if (blankDate.length > 0) {
+        checks.warnings.push({
+          type: 'BLANK_ONBOARDING_DATE',
+          label: 'Blank Onboarding Date values',
+          count: blankDate.length,
+          impact: 'Date_Onboarded field in output will be empty for these clinicians.',
+          sampleRows: blankDate.slice(0, 3).map(r => `CPSO ${r['CPSO #'] || 'N/A'}`)
+        });
+      }
+
+      // Warning: Blank Primary Specialty Pathway
+      const blankPathway = rows.filter(r => !String(r['Primary Specialty Pathway'] || '').trim());
+      if (blankPathway.length > 0) {
+        checks.warnings.push({
+          type: 'BLANK_SPECIALTY_PATHWAY',
+          label: 'Blank Primary Specialty Pathway values',
+          count: blankPathway.length,
+          impact: 'Specialty_Pathway field in output will show default value for these clinicians.',
+          sampleRows: blankPathway.slice(0, 3).map(r => `CPSO ${r['CPSO #'] || 'N/A'}`)
+        });
+      }
+    }
+
+    // Calculate overall status
+    checks.status = checks.critical.length > 0 ? 'critical' : checks.warnings.length > 0 ? 'warning' : 'good';
+    return checks;
+  }, []);
 
   // Check if record should be excluded
   const shouldExclude = (record, siteName) => {
@@ -574,27 +780,105 @@ export default function ClinicianConsolidationTool() {
     return Object.keys(specialtyMapping).sort();
   }, [specialtyMapping]);
 
+  // Calculate pre-processing quality overview
+  const preProcessingOverview = useMemo(() => {
+    const fileTypes = ['geoSpatial', 'regionalAuthority', 'supportSite', 'ldgLedger'];
+    const fileLabels = {
+      geoSpatial: 'Geo-Spatial LDG',
+      regionalAuthority: 'Regional Authority',
+      supportSite: 'Support Site Analytics',
+      ldgLedger: 'LDG Onboarding Ledger'
+    };
+
+    let totalCritical = 0;
+    let totalWarnings = 0;
+    let filesWithCritical = [];
+    let filesWithWarnings = [];
+    let allCriticalIssues = [];
+    let allWarningIssues = [];
+
+    fileTypes.forEach(ft => {
+      const checks = qualityChecks[ft];
+      if (checks) {
+        if (checks.critical.length > 0) {
+          totalCritical += checks.critical.length;
+          filesWithCritical.push(fileLabels[ft]);
+          checks.critical.forEach(issue => {
+            allCriticalIssues.push({ ...issue, source: fileLabels[ft] });
+          });
+        }
+        if (checks.warnings.length > 0) {
+          totalWarnings += checks.warnings.length;
+          if (!filesWithCritical.includes(fileLabels[ft])) {
+            filesWithWarnings.push(fileLabels[ft]);
+          }
+          checks.warnings.forEach(issue => {
+            allWarningIssues.push({ ...issue, source: fileLabels[ft] });
+          });
+        }
+      }
+    });
+
+    const hasAnyFile = fileTypes.some(ft => files[ft]);
+    const hasAnyIssues = totalCritical > 0 || totalWarnings > 0;
+
+    return {
+      totalCritical,
+      totalWarnings,
+      filesWithCritical,
+      filesWithWarnings,
+      allCriticalIssues,
+      allWarningIssues,
+      hasAnyFile,
+      hasAnyIssues,
+      overallStatus: totalCritical > 0 ? 'critical' : totalWarnings > 0 ? 'warning' : 'good'
+    };
+  }, [qualityChecks, files]);
+
+  // Track expanded quality panels
+  const [expandedQuality, setExpandedQuality] = useState({
+    geoSpatial: false,
+    regionalAuthority: false,
+    supportSite: false,
+    ldgLedger: false
+  });
+
   // File upload component
   const FileUploadBox = ({ fileType, label, description }) => {
     const file = files[fileType];
-    const fileWarnings = warnings[fileType];
     const recordCount = data[fileType].length;
-    const hasWarnings = fileWarnings && fileWarnings.length > 0;
+    const checks = qualityChecks[fileType];
+    const isExpanded = expandedQuality[fileType];
 
-    // Determine colors based on file state and warnings
+    // Determine status based on quality checks
+    const hasCritical = checks?.critical?.length > 0;
+    const hasWarnings = checks?.warnings?.length > 0;
+    const hasIssues = hasCritical || hasWarnings;
+
+    // Determine colors based on file state and quality status
     const cardStyle = !file
       ? 'border-gray-300 hover:border-blue-400'
-      : hasWarnings
-        ? 'border-yellow-400 bg-yellow-50'
-        : 'border-green-400 bg-green-50';
+      : hasCritical
+        ? 'border-red-400 bg-red-50'
+        : hasWarnings
+          ? 'border-yellow-400 bg-yellow-50'
+          : 'border-green-400 bg-green-50';
 
     const iconColor = !file
       ? 'text-gray-400'
-      : hasWarnings
-        ? 'text-yellow-600'
-        : 'text-green-600';
+      : hasCritical
+        ? 'text-red-600'
+        : hasWarnings
+          ? 'text-yellow-600'
+          : 'text-green-600';
 
-    const statusColor = hasWarnings ? 'text-yellow-700' : 'text-green-700';
+    const statusColor = hasCritical
+      ? 'text-red-700'
+      : hasWarnings
+        ? 'text-yellow-700'
+        : 'text-green-700';
+
+    const StatusIcon = hasCritical ? XCircle : hasWarnings ? AlertTriangle : CheckCircle;
 
     return (
       <div className={`border-2 border-dashed rounded-lg p-4 transition-all ${cardStyle}`}>
@@ -605,21 +889,84 @@ export default function ClinicianConsolidationTool() {
             <p className="text-sm text-gray-500 mb-2">{description}</p>
 
             {file ? (
-              <div className="space-y-1">
+              <div className="space-y-2">
                 <div className={`flex items-center gap-2 ${statusColor}`}>
-                  {hasWarnings ? (
-                    <AlertTriangle className="w-4 h-4" />
-                  ) : (
-                    <CheckCircle className="w-4 h-4" />
-                  )}
+                  <StatusIcon className="w-4 h-4" />
                   <span className="text-sm font-medium">{file.name}</span>
                 </div>
                 <p className="text-sm text-gray-600">{recordCount.toLocaleString()} records loaded</p>
-                {hasWarnings && (
-                  <div className="mt-2 p-2 bg-yellow-100 rounded border border-yellow-300">
-                    <div className="text-sm text-yellow-800">
-                      {fileWarnings.map((w, i) => <p key={i}>{w}</p>)}
-                    </div>
+
+                {/* Quality Status Summary */}
+                {checks && (
+                  <div className="flex items-center gap-2 text-xs">
+                    {hasCritical && (
+                      <span className="px-2 py-0.5 bg-red-200 text-red-800 rounded-full">
+                        {checks.critical.length} critical
+                      </span>
+                    )}
+                    {hasWarnings && (
+                      <span className="px-2 py-0.5 bg-yellow-200 text-yellow-800 rounded-full">
+                        {checks.warnings.length} warning{checks.warnings.length !== 1 ? 's' : ''}
+                      </span>
+                    )}
+                    {!hasIssues && (
+                      <span className="px-2 py-0.5 bg-green-200 text-green-800 rounded-full">
+                        No issues found
+                      </span>
+                    )}
+                  </div>
+                )}
+
+                {/* Expandable Quality Details */}
+                {hasIssues && (
+                  <div className="mt-2">
+                    <button
+                      onClick={() => setExpandedQuality(prev => ({ ...prev, [fileType]: !prev[fileType] }))}
+                      className="flex items-center gap-1 text-sm text-gray-600 hover:text-gray-800"
+                    >
+                      {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                      <span>{isExpanded ? 'Hide' : 'Show'} quality details</span>
+                    </button>
+
+                    {isExpanded && (
+                      <div className="mt-2 space-y-2">
+                        {/* Critical Issues */}
+                        {checks.critical.map((issue, idx) => (
+                          <div key={`critical-${idx}`} className="p-2 bg-red-100 rounded border border-red-300">
+                            <div className="flex items-start gap-2">
+                              <XCircle className="w-4 h-4 text-red-600 mt-0.5 flex-shrink-0" />
+                              <div className="text-sm">
+                                <p className="font-medium text-red-800">{issue.label} ({issue.count} rows)</p>
+                                <p className="text-red-700 text-xs mt-0.5">{issue.impact}</p>
+                                {issue.sampleRows.length > 0 && (
+                                  <p className="text-red-600 text-xs mt-1">
+                                    Examples: {issue.sampleRows.join('; ')}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+
+                        {/* Warnings */}
+                        {checks.warnings.map((issue, idx) => (
+                          <div key={`warning-${idx}`} className="p-2 bg-yellow-100 rounded border border-yellow-300">
+                            <div className="flex items-start gap-2">
+                              <AlertTriangle className="w-4 h-4 text-yellow-600 mt-0.5 flex-shrink-0" />
+                              <div className="text-sm">
+                                <p className="font-medium text-yellow-800">{issue.label} ({issue.count} rows)</p>
+                                <p className="text-yellow-700 text-xs mt-0.5">{issue.impact}</p>
+                                {issue.sampleRows.length > 0 && (
+                                  <p className="text-yellow-600 text-xs mt-1">
+                                    Examples: {issue.sampleRows.join('; ')}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -644,6 +991,8 @@ export default function ClinicianConsolidationTool() {
                 setFiles(prev => ({ ...prev, [fileType]: null }));
                 setData(prev => ({ ...prev, [fileType]: [] }));
                 setWarnings(prev => ({ ...prev, [fileType]: [] }));
+                setQualityChecks(prev => ({ ...prev, [fileType]: null }));
+                setExpandedQuality(prev => ({ ...prev, [fileType]: false }));
                 setIsProcessed(false);
               }}
               className="text-gray-400 hover:text-red-500"
@@ -723,14 +1072,91 @@ export default function ClinicianConsolidationTool() {
               />
             </div>
 
+            {/* Pre-Processing Quality Overview */}
+            {preProcessingOverview.hasAnyFile && preProcessingOverview.hasAnyIssues && (
+              <div className={`rounded-lg p-4 ${
+                preProcessingOverview.overallStatus === 'critical'
+                  ? 'bg-red-50 border border-red-200'
+                  : 'bg-yellow-50 border border-yellow-200'
+              }`}>
+                <div className="flex items-start gap-3">
+                  {preProcessingOverview.overallStatus === 'critical' ? (
+                    <XCircle className="w-5 h-5 text-red-600 mt-0.5" />
+                  ) : (
+                    <AlertTriangle className="w-5 h-5 text-yellow-600 mt-0.5" />
+                  )}
+                  <div className="flex-1">
+                    <h3 className={`font-medium ${
+                      preProcessingOverview.overallStatus === 'critical' ? 'text-red-800' : 'text-yellow-800'
+                    }`}>
+                      Pre-Processing Quality Overview
+                    </h3>
+                    <div className="mt-2 text-sm space-y-1">
+                      {preProcessingOverview.totalCritical > 0 && (
+                        <p className="text-red-700">
+                          <span className="font-semibold">{preProcessingOverview.totalCritical} critical issue{preProcessingOverview.totalCritical !== 1 ? 's' : ''}</span>
+                          {' '}in {preProcessingOverview.filesWithCritical.join(', ')}
+                        </p>
+                      )}
+                      {preProcessingOverview.totalWarnings > 0 && (
+                        <p className="text-yellow-700">
+                          <span className="font-semibold">{preProcessingOverview.totalWarnings} warning{preProcessingOverview.totalWarnings !== 1 ? 's' : ''}</span>
+                          {' '}across loaded files
+                        </p>
+                      )}
+                    </div>
+
+                    {preProcessingOverview.overallStatus === 'critical' && (
+                      <div className="mt-3 p-3 bg-red-100 rounded border border-red-300">
+                        <p className="text-sm font-medium text-red-800 mb-2">Impact on Processing:</p>
+                        <ul className="text-xs text-red-700 space-y-1 list-disc list-inside">
+                          {preProcessingOverview.allCriticalIssues.map((issue, idx) => (
+                            <li key={idx}>
+                              <span className="font-medium">{issue.source}</span>: {issue.label} ({issue.count} rows) - {issue.impact}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {preProcessingOverview.overallStatus === 'warning' && preProcessingOverview.allWarningIssues.length > 0 && (
+                      <div className="mt-3 p-3 bg-yellow-100 rounded border border-yellow-300">
+                        <p className="text-sm font-medium text-yellow-800 mb-2">Potential Impact:</p>
+                        <ul className="text-xs text-yellow-700 space-y-1 list-disc list-inside">
+                          {preProcessingOverview.allWarningIssues.slice(0, 5).map((issue, idx) => (
+                            <li key={idx}>
+                              <span className="font-medium">{issue.source}</span>: {issue.label} ({issue.count} rows)
+                            </li>
+                          ))}
+                          {preProcessingOverview.allWarningIssues.length > 5 && (
+                            <li className="italic">...and {preProcessingOverview.allWarningIssues.length - 5} more warnings</li>
+                          )}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
             {data.geoSpatial.length > 0 && (
-              <div className="flex justify-center pt-4">
+              <div className="flex flex-col items-center pt-4 gap-2">
+                {preProcessingOverview.overallStatus === 'critical' && (
+                  <p className="text-sm text-red-600 flex items-center gap-1">
+                    <AlertTriangle className="w-4 h-4" />
+                    Critical issues detected - some records will be skipped during processing
+                  </p>
+                )}
                 <button
                   onClick={processData}
-                  className="px-6 py-3 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700 transition flex items-center gap-2"
+                  className={`px-6 py-3 font-semibold rounded-lg transition flex items-center gap-2 ${
+                    preProcessingOverview.overallStatus === 'critical'
+                      ? 'bg-orange-600 text-white hover:bg-orange-700'
+                      : 'bg-green-600 text-white hover:bg-green-700'
+                  }`}
                 >
                   <Settings className="w-5 h-5" />
-                  Process Data
+                  {preProcessingOverview.overallStatus === 'critical' ? 'Process Data (with issues)' : 'Process Data'}
                 </button>
               </div>
             )}
