@@ -197,8 +197,8 @@ export default function ClinicianConsolidationTool() {
       }
     });
 
-    // Track unique clinician-site-region combinations
-    const recordKey = (cpso, siteNum, region) => `${cpso}|${siteNum}|${region}`;
+    // Track unique clinician-site combinations (CPSO + Site Number only)
+    const recordKey = (cpso, siteNum) => `${cpso}|${siteNum}`;
     const processedKeys = new Set();
 
     // Process Regional Authority data (Specialists)
@@ -208,8 +208,7 @@ export default function ClinicianConsolidationTool() {
 
       const siteNum = row['siteNum'] || '';
       const siteName = row['siteName'] || '';
-      const region = row['healthRegion'] || '';
-      const key = recordKey(cpso, siteNum, region);
+      const key = recordKey(cpso, siteNum);
 
       if (processedKeys.has(key)) return;
       processedKeys.add(key);
@@ -276,23 +275,25 @@ export default function ClinicianConsolidationTool() {
       const siteNum = row['siteNum'] || '';
       const siteName = row['siteName'] || '';
       const geoData = geoSpatialMap.get(cpso);
-      const region = geoData?.region || '';
-      const key = recordKey(cpso, siteNum, region);
+      const key = recordKey(cpso, siteNum);
 
-      if (processedKeys.has(key)) {
+      // Check if record already exists by CPSO + Site (consistent with LDG Ledger approach)
+      const existingIdx = allRecords.findIndex(r =>
+        r.Professional_ID === cpso && r.Ocean_Site_Number === siteNum
+      );
+
+      if (existingIdx >= 0) {
         // Update existing record with Support Site data
-        const existingIdx = allRecords.findIndex(r =>
-          r.Professional_ID === cpso && r.Ocean_Site_Number === siteNum
-        );
-        if (existingIdx >= 0) {
-          allRecords[existingIdx].Last_Referral_Sent = row['referralLastSent'] || '';
-          allRecords[existingIdx].Clinician_Type = row['clinicianType'] || allRecords[existingIdx].Clinician_Type;
-          if (!allRecords[existingIdx].Data_Sources.includes('Support Site')) {
-            allRecords[existingIdx].Data_Sources += ',Support Site';
-          }
+        allRecords[existingIdx].Last_Referral_Sent = row['referralLastSent'] || '';
+        allRecords[existingIdx].Clinician_Type = row['clinicianType'] || allRecords[existingIdx].Clinician_Type;
+        if (!allRecords[existingIdx].Data_Sources.includes('Support Site')) {
+          allRecords[existingIdx].Data_Sources += ',Support Site';
         }
         return;
       }
+
+      // Only create new record if no existing match
+      if (processedKeys.has(key)) return;
       processedKeys.add(key);
 
       const inGeoSpatial = !!geoData;
@@ -357,10 +358,9 @@ export default function ClinicianConsolidationTool() {
       const siteNum = row['Ocean Site Number (eReferral Ontario only)'] || '';
       const siteName = row['Directory Listing Name (eReferral Ontario only)'] || '';
       const geoData = geoSpatialMap.get(cpso);
-      const region = geoData?.region || '';
-      const key = recordKey(cpso, siteNum, region);
+      const key = recordKey(cpso, siteNum);
 
-      // Check if record already exists
+      // Check if record already exists by CPSO + Site
       const existingIdx = allRecords.findIndex(r =>
         r.Professional_ID === cpso && r.Ocean_Site_Number === siteNum
       );
