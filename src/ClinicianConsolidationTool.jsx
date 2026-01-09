@@ -285,7 +285,8 @@ export default function ClinicianConsolidationTool() {
       if (existingIdx >= 0) {
         // Update existing record with Support Site data
         allRecords[existingIdx].Last_Referral_Sent = row['referralLastSent'] || '';
-        allRecords[existingIdx].Clinician_Type = row['clinicianType'] || allRecords[existingIdx].Clinician_Type;
+        // Only update Clinician_Type if not already set
+        allRecords[existingIdx].Clinician_Type = allRecords[existingIdx].Clinician_Type || row['clinicianType'] || '';
         if (!allRecords[existingIdx].Data_Sources.includes('Support Site')) {
           allRecords[existingIdx].Data_Sources += ',Support Site';
         }
