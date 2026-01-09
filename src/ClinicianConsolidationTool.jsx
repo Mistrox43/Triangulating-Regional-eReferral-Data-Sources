@@ -101,60 +101,6 @@ export default function ClinicianConsolidationTool() {
     });
   }, []);
 
-  // Handle file upload
-  const handleFileUpload = useCallback(async (fileType, file) => {
-    if (!file) return;
-
-    try {
-      const result = await parseFile(file, fileType);
-
-      // Run comprehensive quality checks
-      const checks = runQualityChecks(fileType, result.data);
-
-      // Build warning messages from quality checks for backward compatibility
-      let fileWarnings = [...result.warnings];
-      checks.critical.forEach(issue => {
-        fileWarnings.push(`Critical: ${issue.label} (${issue.count} rows) - ${issue.impact}`);
-      });
-      checks.warnings.forEach(issue => {
-        fileWarnings.push(`Warning: ${issue.label} (${issue.count} rows) - ${issue.impact}`);
-      });
-
-      setFiles(prev => ({ ...prev, [fileType]: file }));
-      setData(prev => ({ ...prev, [fileType]: result.data }));
-      setWarnings(prev => ({ ...prev, [fileType]: fileWarnings }));
-      setQualityChecks(prev => ({ ...prev, [fileType]: checks }));
-      setIsProcessed(false);
-
-      // If Geo-Spatial LDG, extract unique specialties for mapping
-      if (fileType === 'geoSpatial' && result.data.length > 0) {
-        const specialties = [...new Set(result.data.map(row => row['Specialty']).filter(Boolean))];
-        const defaultMapping = {};
-        specialties.forEach(spec => {
-          defaultMapping[spec] = 'specialist';
-        });
-        setSpecialtyMapping(defaultMapping);
-      }
-    } catch (error) {
-      alert(`Error loading file: ${error.message}`);
-    }
-  }, [parseFile, runQualityChecks]);
-
-  // Normalize CPSO (strip spaces)
-  const normalizeCPSO = (cpso) => {
-    if (!cpso) return '';
-    return String(cpso).replace(/\s/g, '').trim();
-  };
-
-  // Parse full name into first and last name
-  const parseFullName = (fullName) => {
-    if (!fullName) return { firstName: '', lastName: '' };
-    const parts = String(fullName).trim().split(' ');
-    const firstName = parts[0] || '';
-    const lastName = parts.slice(1).join(' ') || '';
-    return { firstName, lastName };
-  };
-
   // Quality check functions for each file type
   const runQualityChecks = useCallback((fileType, rows) => {
     const checks = { critical: [], warnings: [], summary: { totalRows: rows.length } };
@@ -358,6 +304,60 @@ export default function ClinicianConsolidationTool() {
     checks.status = checks.critical.length > 0 ? 'critical' : checks.warnings.length > 0 ? 'warning' : 'good';
     return checks;
   }, []);
+
+  // Handle file upload
+  const handleFileUpload = useCallback(async (fileType, file) => {
+    if (!file) return;
+
+    try {
+      const result = await parseFile(file, fileType);
+
+      // Run comprehensive quality checks
+      const checks = runQualityChecks(fileType, result.data);
+
+      // Build warning messages from quality checks for backward compatibility
+      let fileWarnings = [...result.warnings];
+      checks.critical.forEach(issue => {
+        fileWarnings.push(`Critical: ${issue.label} (${issue.count} rows) - ${issue.impact}`);
+      });
+      checks.warnings.forEach(issue => {
+        fileWarnings.push(`Warning: ${issue.label} (${issue.count} rows) - ${issue.impact}`);
+      });
+
+      setFiles(prev => ({ ...prev, [fileType]: file }));
+      setData(prev => ({ ...prev, [fileType]: result.data }));
+      setWarnings(prev => ({ ...prev, [fileType]: fileWarnings }));
+      setQualityChecks(prev => ({ ...prev, [fileType]: checks }));
+      setIsProcessed(false);
+
+      // If Geo-Spatial LDG, extract unique specialties for mapping
+      if (fileType === 'geoSpatial' && result.data.length > 0) {
+        const specialties = [...new Set(result.data.map(row => row['Specialty']).filter(Boolean))];
+        const defaultMapping = {};
+        specialties.forEach(spec => {
+          defaultMapping[spec] = 'specialist';
+        });
+        setSpecialtyMapping(defaultMapping);
+      }
+    } catch (error) {
+      alert(`Error loading file: ${error.message}`);
+    }
+  }, [parseFile, runQualityChecks]);
+
+  // Normalize CPSO (strip spaces)
+  const normalizeCPSO = (cpso) => {
+    if (!cpso) return '';
+    return String(cpso).replace(/\s/g, '').trim();
+  };
+
+  // Parse full name into first and last name
+  const parseFullName = (fullName) => {
+    if (!fullName) return { firstName: '', lastName: '' };
+    const parts = String(fullName).trim().split(' ');
+    const firstName = parts[0] || '';
+    const lastName = parts.slice(1).join(' ') || '';
+    return { firstName, lastName };
+  };
 
   // Check if record should be excluded
   const shouldExclude = (record, siteName) => {
