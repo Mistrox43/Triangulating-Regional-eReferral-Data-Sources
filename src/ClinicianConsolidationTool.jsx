@@ -243,6 +243,36 @@ export default function ClinicianConsolidationTool() {
         });
       }
 
+      // Critical: Same Professional ID with different names
+      const idToNames = {};
+      rows.forEach((row, idx) => {
+        const profId = String(row['clinicianProfessionalId'] || '').trim();
+        if (profId) {
+          const firstName = String(row['clinicianFirstName'] || '').trim().toLowerCase();
+          const lastName = String(row['clinicianSurname'] || '').trim().toLowerCase();
+          const fullName = `${firstName} ${lastName}`.trim();
+          if (!idToNames[profId]) {
+            idToNames[profId] = { names: new Set(), rows: [] };
+          }
+          if (fullName) {
+            idToNames[profId].names.add(fullName);
+          }
+          idToNames[profId].rows.push(idx + 2);
+        }
+      });
+      const nameMismatchIds = Object.entries(idToNames).filter(([_, data]) => data.names.size > 1);
+      if (nameMismatchIds.length > 0) {
+        const totalAffectedRows = nameMismatchIds.reduce((sum, [_, data]) => sum + data.rows.length, 0);
+        checks.critical.push({
+          type: 'PROFESSIONAL_ID_NAME_MISMATCH',
+          label: 'Professional ID with multiple different names',
+          count: totalAffectedRows,
+          uniqueCount: nameMismatchIds.length,
+          impact: 'Same Professional ID appears with different names, indicating potential data integrity issues.',
+          sampleRows: nameMismatchIds.slice(0, 3).map(([id, data]) => `ID ${id}: ${Array.from(data.names).join(' vs ')}`)
+        });
+      }
+
     } else if (fileType === 'supportSite') {
       // Critical: Blank professionalId
       const blankCPSO = rows.filter(r => !String(r['professionalId'] || '').trim());
@@ -292,6 +322,34 @@ export default function ClinicianConsolidationTool() {
           count: blankLastRef.length,
           impact: 'Last_Referral_Sent field in output will be empty for these clinicians.',
           sampleRows: blankLastRef.slice(0, 3).map(r => `CPSO ${r['professionalId'] || 'N/A'}`)
+        });
+      }
+
+      // Critical: Same Professional ID with different names
+      const idToNamesSS = {};
+      rows.forEach((row, idx) => {
+        const profId = String(row['professionalId'] || '').trim();
+        if (profId) {
+          const fullName = String(row['userFullName'] || '').trim().toLowerCase();
+          if (!idToNamesSS[profId]) {
+            idToNamesSS[profId] = { names: new Set(), rows: [] };
+          }
+          if (fullName) {
+            idToNamesSS[profId].names.add(fullName);
+          }
+          idToNamesSS[profId].rows.push(idx + 2);
+        }
+      });
+      const nameMismatchIdsSS = Object.entries(idToNamesSS).filter(([_, data]) => data.names.size > 1);
+      if (nameMismatchIdsSS.length > 0) {
+        const totalAffectedRows = nameMismatchIdsSS.reduce((sum, [_, data]) => sum + data.rows.length, 0);
+        checks.critical.push({
+          type: 'PROFESSIONAL_ID_NAME_MISMATCH',
+          label: 'Professional ID with multiple different names',
+          count: totalAffectedRows,
+          uniqueCount: nameMismatchIdsSS.length,
+          impact: 'Same Professional ID appears with different names, indicating potential data integrity issues.',
+          sampleRows: nameMismatchIdsSS.slice(0, 3).map(([id, data]) => `ID ${id}: ${Array.from(data.names).join(' vs ')}`)
         });
       }
 
@@ -356,6 +414,36 @@ export default function ClinicianConsolidationTool() {
           count: blankPathway.length,
           impact: 'Specialty_Pathway field in output will show default value for these clinicians.',
           sampleRows: blankPathway.slice(0, 3).map(r => `CPSO ${r['CPSO #'] || 'N/A'}`)
+        });
+      }
+
+      // Critical: Same CPSO # with different names
+      const idToNamesLDG = {};
+      rows.forEach((row, idx) => {
+        const cpso = String(row['CPSO #'] || '').trim();
+        if (cpso) {
+          const firstName = String(row['First Name'] || '').trim().toLowerCase();
+          const lastName = String(row['Last Name'] || '').trim().toLowerCase();
+          const fullName = `${firstName} ${lastName}`.trim();
+          if (!idToNamesLDG[cpso]) {
+            idToNamesLDG[cpso] = { names: new Set(), rows: [] };
+          }
+          if (fullName) {
+            idToNamesLDG[cpso].names.add(fullName);
+          }
+          idToNamesLDG[cpso].rows.push(idx + 2);
+        }
+      });
+      const nameMismatchIdsLDG = Object.entries(idToNamesLDG).filter(([_, data]) => data.names.size > 1);
+      if (nameMismatchIdsLDG.length > 0) {
+        const totalAffectedRows = nameMismatchIdsLDG.reduce((sum, [_, data]) => sum + data.rows.length, 0);
+        checks.critical.push({
+          type: 'CPSO_NAME_MISMATCH',
+          label: 'CPSO # with multiple different names',
+          count: totalAffectedRows,
+          uniqueCount: nameMismatchIdsLDG.length,
+          impact: 'Same CPSO # appears with different names, indicating potential data integrity issues.',
+          sampleRows: nameMismatchIdsLDG.slice(0, 3).map(([id, data]) => `CPSO ${id}: ${Array.from(data.names).join(' vs ')}`)
         });
       }
     }
@@ -431,6 +519,28 @@ export default function ClinicianConsolidationTool() {
         issues.push('Blank Health Region');
       }
 
+      // Check if this Professional ID has multiple different names
+      if (profId) {
+        const idToNamesRA = {};
+        allRows.forEach(r => {
+          const id = String(r['clinicianProfessionalId'] || '').trim();
+          if (id) {
+            const firstName = String(r['clinicianFirstName'] || '').trim().toLowerCase();
+            const lastName = String(r['clinicianSurname'] || '').trim().toLowerCase();
+            const fullName = `${firstName} ${lastName}`.trim();
+            if (!idToNamesRA[id]) {
+              idToNamesRA[id] = new Set();
+            }
+            if (fullName) {
+              idToNamesRA[id].add(fullName);
+            }
+          }
+        });
+        if (idToNamesRA[profId] && idToNamesRA[profId].size > 1) {
+          issues.push('Professional ID has multiple different names');
+        }
+      }
+
     } else if (fileType === 'supportSite') {
       const profId = String(row['professionalId'] || '').trim();
 
@@ -452,6 +562,26 @@ export default function ClinicianConsolidationTool() {
       // Check blank referralLastSent
       if (!String(row['referralLastSent'] || '').trim()) {
         issues.push('Blank Last Referral Sent');
+      }
+
+      // Check if this Professional ID has multiple different names
+      if (profId) {
+        const idToNamesSS = {};
+        allRows.forEach(r => {
+          const id = String(r['professionalId'] || '').trim();
+          if (id) {
+            const fullName = String(r['userFullName'] || '').trim().toLowerCase();
+            if (!idToNamesSS[id]) {
+              idToNamesSS[id] = new Set();
+            }
+            if (fullName) {
+              idToNamesSS[id].add(fullName);
+            }
+          }
+        });
+        if (idToNamesSS[profId] && idToNamesSS[profId].size > 1) {
+          issues.push('Professional ID has multiple different names');
+        }
       }
 
     } else if (fileType === 'ldgLedger') {
@@ -480,6 +610,28 @@ export default function ClinicianConsolidationTool() {
       // Check blank Primary Specialty Pathway
       if (!String(row['Primary Specialty Pathway'] || '').trim()) {
         issues.push('Blank Specialty Pathway');
+      }
+
+      // Check if this CPSO # has multiple different names
+      if (cpso) {
+        const idToNamesLDG = {};
+        allRows.forEach(r => {
+          const id = String(r['CPSO #'] || '').trim();
+          if (id) {
+            const firstName = String(r['First Name'] || '').trim().toLowerCase();
+            const lastName = String(r['Last Name'] || '').trim().toLowerCase();
+            const fullName = `${firstName} ${lastName}`.trim();
+            if (!idToNamesLDG[id]) {
+              idToNamesLDG[id] = new Set();
+            }
+            if (fullName) {
+              idToNamesLDG[id].add(fullName);
+            }
+          }
+        });
+        if (idToNamesLDG[cpso] && idToNamesLDG[cpso].size > 1) {
+          issues.push('CPSO # has multiple different names');
+        }
       }
     }
 
