@@ -118,6 +118,21 @@ export default function ClinicianConsolidationTool() {
         });
       }
 
+      // Critical: Non-numeric CPSO values
+      const nonNumericCPSO = rows.filter(r => {
+        const val = String(r['CPSO'] || '').trim();
+        return val && !/^\d+$/.test(val);
+      });
+      if (nonNumericCPSO.length > 0) {
+        checks.critical.push({
+          type: 'NON_NUMERIC_CPSO',
+          label: 'Non-numeric CPSO values',
+          count: nonNumericCPSO.length,
+          impact: 'CPSO values should contain only numbers. These records may fail to match with other files.',
+          sampleRows: nonNumericCPSO.slice(0, 3).map(r => `"${r['CPSO']}" (Row ${rows.indexOf(r) + 2})`)
+        });
+      }
+
       // Warning: Duplicate CPSOs
       const cpsoCount = {};
       rows.forEach((row, idx) => {
@@ -189,6 +204,21 @@ export default function ClinicianConsolidationTool() {
         });
       }
 
+      // Critical: Non-numeric Professional ID values
+      const nonNumericProfId = rows.filter(r => {
+        const val = String(r['clinicianProfessionalId'] || '').trim();
+        return val && !/^\d+$/.test(val);
+      });
+      if (nonNumericProfId.length > 0) {
+        checks.critical.push({
+          type: 'NON_NUMERIC_PROFESSIONAL_ID',
+          label: 'Non-numeric Professional ID values',
+          count: nonNumericProfId.length,
+          impact: 'Professional ID values should contain only numbers. These records may fail to match with other files.',
+          sampleRows: nonNumericProfId.slice(0, 3).map(r => `"${r['clinicianProfessionalId']}" (Row ${rows.indexOf(r) + 2})`)
+        });
+      }
+
       // Warning: Blank siteNum
       const blankSite = rows.filter(r => !String(r['siteNum'] || '').trim());
       if (blankSite.length > 0) {
@@ -226,6 +256,21 @@ export default function ClinicianConsolidationTool() {
         });
       }
 
+      // Critical: Non-numeric Professional ID values
+      const nonNumericProfId = rows.filter(r => {
+        const val = String(r['professionalId'] || '').trim();
+        return val && !/^\d+$/.test(val);
+      });
+      if (nonNumericProfId.length > 0) {
+        checks.critical.push({
+          type: 'NON_NUMERIC_PROFESSIONAL_ID',
+          label: 'Non-numeric Professional ID values',
+          count: nonNumericProfId.length,
+          impact: 'Professional ID values should contain only numbers. These records may fail to match with other files.',
+          sampleRows: nonNumericProfId.slice(0, 3).map(r => `"${r['professionalId']}" (Row ${rows.indexOf(r) + 2})`)
+        });
+      }
+
       // Warning: Blank siteNum
       const blankSite = rows.filter(r => !String(r['siteNum'] || '').trim());
       if (blankSite.length > 0) {
@@ -260,6 +305,21 @@ export default function ClinicianConsolidationTool() {
           count: blankCPSO.length,
           impact: 'These rows will be skipped entirely - no records created.',
           sampleRows: blankCPSO.slice(0, 3).map(r => `${r['First Name'] || ''} ${r['Last Name'] || ''} (Row ${rows.indexOf(r) + 2})`.trim())
+        });
+      }
+
+      // Critical: Non-numeric CPSO # values
+      const nonNumericCPSO = rows.filter(r => {
+        const val = String(r['CPSO #'] || '').trim();
+        return val && !/^\d+$/.test(val);
+      });
+      if (nonNumericCPSO.length > 0) {
+        checks.critical.push({
+          type: 'NON_NUMERIC_CPSO',
+          label: 'Non-numeric CPSO # values',
+          count: nonNumericCPSO.length,
+          impact: 'CPSO # values should contain only numbers. These records may fail to match with other files.',
+          sampleRows: nonNumericCPSO.slice(0, 3).map(r => `"${r['CPSO #']}" (Row ${rows.indexOf(r) + 2})`)
         });
       }
 
