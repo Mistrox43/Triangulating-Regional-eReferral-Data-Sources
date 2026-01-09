@@ -236,7 +236,7 @@ export default function ClinicianConsolidationTool() {
         Specialty_Pathway: 'Value not contained in Source files',
         LDG_Name: geoData?.ldg || '',
         LDG_Lead_Org: geoData?.ldgLeadOrg || '',
-        Region: geoData?.region || region,
+        Region: geoData?.region || row['healthRegion'] || '',
         Network: 'OH',
         Solution_Type: '',
         Ocean_Site_Number: siteNum,
