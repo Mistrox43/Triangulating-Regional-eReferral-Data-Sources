@@ -273,6 +273,35 @@ export default function ClinicianConsolidationTool() {
         });
       }
 
+      // Warning: Duplicate Professional ID + Site Number combinations
+      const idSiteCombos = {};
+      rows.forEach((row, idx) => {
+        const profId = String(row['clinicianProfessionalId'] || '').trim();
+        const siteNum = String(row['siteNum'] || '').trim();
+        if (profId) {
+          const key = `${profId}|${siteNum}`;
+          if (!idSiteCombos[key]) {
+            idSiteCombos[key] = [];
+          }
+          idSiteCombos[key].push(idx + 2);
+        }
+      });
+      const duplicateIdSite = Object.entries(idSiteCombos).filter(([_, rowNums]) => rowNums.length > 1);
+      if (duplicateIdSite.length > 0) {
+        const totalDupeRows = duplicateIdSite.reduce((sum, [_, rowNums]) => sum + rowNums.length, 0);
+        checks.warnings.push({
+          type: 'DUPLICATE_ID_SITE',
+          label: 'Duplicate Professional ID + Site Number combinations',
+          count: totalDupeRows,
+          uniqueCount: duplicateIdSite.length,
+          impact: 'Only the first row for each duplicate combination will be processed. Subsequent rows will be skipped.',
+          sampleRows: duplicateIdSite.slice(0, 3).map(([key, rowNums]) => {
+            const [profId, siteNum] = key.split('|');
+            return `ID ${profId} + Site ${siteNum || '(blank)'}: rows ${rowNums.join(', ')}`;
+          })
+        });
+      }
+
     } else if (fileType === 'supportSite') {
       // Critical: Blank professionalId
       const blankCPSO = rows.filter(r => !String(r['professionalId'] || '').trim());
@@ -350,6 +379,35 @@ export default function ClinicianConsolidationTool() {
           uniqueCount: nameMismatchIdsSS.length,
           impact: 'Same Professional ID appears with different names, indicating potential data integrity issues.',
           sampleRows: nameMismatchIdsSS.slice(0, 3).map(([id, data]) => `ID ${id}: ${Array.from(data.names).join(' vs ')}`)
+        });
+      }
+
+      // Warning: Duplicate Professional ID + Site Number combinations
+      const idSiteCombosSS = {};
+      rows.forEach((row, idx) => {
+        const profId = String(row['professionalId'] || '').trim();
+        const siteNum = String(row['siteNum'] || '').trim();
+        if (profId) {
+          const key = `${profId}|${siteNum}`;
+          if (!idSiteCombosSS[key]) {
+            idSiteCombosSS[key] = [];
+          }
+          idSiteCombosSS[key].push(idx + 2);
+        }
+      });
+      const duplicateIdSiteSS = Object.entries(idSiteCombosSS).filter(([_, rowNums]) => rowNums.length > 1);
+      if (duplicateIdSiteSS.length > 0) {
+        const totalDupeRows = duplicateIdSiteSS.reduce((sum, [_, rowNums]) => sum + rowNums.length, 0);
+        checks.warnings.push({
+          type: 'DUPLICATE_ID_SITE',
+          label: 'Duplicate Professional ID + Site Number combinations',
+          count: totalDupeRows,
+          uniqueCount: duplicateIdSiteSS.length,
+          impact: 'Only the first row for each duplicate combination will be processed. Subsequent rows will be skipped.',
+          sampleRows: duplicateIdSiteSS.slice(0, 3).map(([key, rowNums]) => {
+            const [profId, siteNum] = key.split('|');
+            return `ID ${profId} + Site ${siteNum || '(blank)'}: rows ${rowNums.join(', ')}`;
+          })
         });
       }
 
@@ -444,6 +502,35 @@ export default function ClinicianConsolidationTool() {
           uniqueCount: nameMismatchIdsLDG.length,
           impact: 'Same CPSO # appears with different names, indicating potential data integrity issues.',
           sampleRows: nameMismatchIdsLDG.slice(0, 3).map(([id, data]) => `CPSO ${id}: ${Array.from(data.names).join(' vs ')}`)
+        });
+      }
+
+      // Warning: Duplicate CPSO # + Ocean Site Number combinations
+      const idSiteCombosLDG = {};
+      rows.forEach((row, idx) => {
+        const cpso = String(row['CPSO #'] || '').trim();
+        const siteNum = String(row['Ocean Site Number (eReferral Ontario only)'] || '').trim();
+        if (cpso) {
+          const key = `${cpso}|${siteNum}`;
+          if (!idSiteCombosLDG[key]) {
+            idSiteCombosLDG[key] = [];
+          }
+          idSiteCombosLDG[key].push(idx + 2);
+        }
+      });
+      const duplicateIdSiteLDG = Object.entries(idSiteCombosLDG).filter(([_, rowNums]) => rowNums.length > 1);
+      if (duplicateIdSiteLDG.length > 0) {
+        const totalDupeRows = duplicateIdSiteLDG.reduce((sum, [_, rowNums]) => sum + rowNums.length, 0);
+        checks.warnings.push({
+          type: 'DUPLICATE_CPSO_SITE',
+          label: 'Duplicate CPSO # + Ocean Site Number combinations',
+          count: totalDupeRows,
+          uniqueCount: duplicateIdSiteLDG.length,
+          impact: 'Only the first row for each duplicate combination will be processed. Subsequent rows will be skipped.',
+          sampleRows: duplicateIdSiteLDG.slice(0, 3).map(([key, rowNums]) => {
+            const [cpso, siteNum] = key.split('|');
+            return `CPSO ${cpso} + Site ${siteNum || '(blank)'}: rows ${rowNums.join(', ')}`;
+          })
         });
       }
     }
@@ -541,6 +628,20 @@ export default function ClinicianConsolidationTool() {
         }
       }
 
+      // Check if this is a duplicate Professional ID + Site Number combination
+      if (profId) {
+        const siteNum = String(row['siteNum'] || '').trim();
+        const key = `${profId}|${siteNum}`;
+        const duplicateCount = allRows.filter(r => {
+          const id = String(r['clinicianProfessionalId'] || '').trim();
+          const site = String(r['siteNum'] || '').trim();
+          return `${id}|${site}` === key;
+        }).length;
+        if (duplicateCount > 1) {
+          issues.push('Duplicate Professional ID + Site Number combination');
+        }
+      }
+
     } else if (fileType === 'supportSite') {
       const profId = String(row['professionalId'] || '').trim();
 
@@ -581,6 +682,20 @@ export default function ClinicianConsolidationTool() {
         });
         if (idToNamesSS[profId] && idToNamesSS[profId].size > 1) {
           issues.push('Professional ID has multiple different names');
+        }
+      }
+
+      // Check if this is a duplicate Professional ID + Site Number combination
+      if (profId) {
+        const siteNum = String(row['siteNum'] || '').trim();
+        const key = `${profId}|${siteNum}`;
+        const duplicateCount = allRows.filter(r => {
+          const id = String(r['professionalId'] || '').trim();
+          const site = String(r['siteNum'] || '').trim();
+          return `${id}|${site}` === key;
+        }).length;
+        if (duplicateCount > 1) {
+          issues.push('Duplicate Professional ID + Site Number combination');
         }
       }
 
@@ -631,6 +746,20 @@ export default function ClinicianConsolidationTool() {
         });
         if (idToNamesLDG[cpso] && idToNamesLDG[cpso].size > 1) {
           issues.push('CPSO # has multiple different names');
+        }
+      }
+
+      // Check if this is a duplicate CPSO # + Ocean Site Number combination
+      if (cpso) {
+        const siteNum = String(row['Ocean Site Number (eReferral Ontario only)'] || '').trim();
+        const key = `${cpso}|${siteNum}`;
+        const duplicateCount = allRows.filter(r => {
+          const id = String(r['CPSO #'] || '').trim();
+          const site = String(r['Ocean Site Number (eReferral Ontario only)'] || '').trim();
+          return `${id}|${site}` === key;
+        }).length;
+        if (duplicateCount > 1) {
+          issues.push('Duplicate CPSO # + Ocean Site Number combination');
         }
       }
     }
