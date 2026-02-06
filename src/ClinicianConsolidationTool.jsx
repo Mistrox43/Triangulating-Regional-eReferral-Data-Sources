@@ -9,7 +9,8 @@ export default function ClinicianConsolidationTool() {
     geoSpatial: null,
     regionalAuthority: null,
     supportSite: null,
-    ldgLedger: null
+    ldgLedger: null,
+    softLaunch: null
   });
 
   // Parsed data state
@@ -17,7 +18,8 @@ export default function ClinicianConsolidationTool() {
     geoSpatial: [],
     regionalAuthority: [],
     supportSite: [],
-    ldgLedger: []
+    ldgLedger: [],
+    softLaunch: []
   });
 
   // Validation warnings
@@ -25,7 +27,8 @@ export default function ClinicianConsolidationTool() {
     geoSpatial: [],
     regionalAuthority: [],
     supportSite: [],
-    ldgLedger: []
+    ldgLedger: [],
+    softLaunch: []
   });
 
   // Pre-processing quality checks state
@@ -33,7 +36,8 @@ export default function ClinicianConsolidationTool() {
     geoSpatial: null,
     regionalAuthority: null,
     supportSite: null,
-    ldgLedger: null
+    ldgLedger: null,
+    softLaunch: null
   });
 
   // Processing state
@@ -54,7 +58,8 @@ export default function ClinicianConsolidationTool() {
     geoSpatial: ['CPSO', 'e-Referral', 'Hospital', 'Postal Code', 'Lead/Reach', 'Region', 'LDG', 'LDG Lead Org', 'Specialty', 'Type of Specialty'],
     regionalAuthority: ['clinicianProfessionalId', 'clinicianFirstName', 'clinicianSurname', 'siteNum', 'siteName', 'healthRegion', 'services', 'postalCode', 'eReferrals', 'eConsults'],
     supportSite: ['siteNum', 'siteName', 'clinicianType', 'professionalId', 'userFullName', 'username', 'referralLastSent'],
-    ldgLedger: ['First Name', 'Last Name', 'CPSO #', 'eReferral Solution', 'Ocean Site Number (eReferral Ontario only)', 'Directory Listing Name (eReferral Ontario only)', 'Role (Sender, Receiver, Both)', 'Primary Specialty Pathway', 'Date Onboarding Completed']
+    ldgLedger: ['First Name', 'Last Name', 'CPSO #', 'eReferral Solution', 'Ocean Site Number (eReferral Ontario only)', 'Directory Listing Name (eReferral Ontario only)', 'Role (Sender, Receiver, Both)', 'Primary Specialty Pathway', 'Date Onboarding Completed'],
+    softLaunch: ['Organization', 'Region', 'eReferral Engagement Status', 'Onboarding Ticket Number', 'eReferral Type', 'Specialty', 'EMR Integration or Portal', 'CPSO #', 'Ocean Site Number', 'Sending Registration Number(s)', 'Number of Sending Clinicians Onboarded', 'Receiving Registration Number(s)', 'Number of Receiving Clinicians Onboarded', 'Number of Support Staff Onboarded', 'Date RMS Admin Training Completed', 'Date End Users Training Completed', 'Go Live Date']
   };
 
   // Parse uploaded file
@@ -1271,12 +1276,13 @@ export default function ClinicianConsolidationTool() {
 
   // Calculate pre-processing quality overview
   const preProcessingOverview = useMemo(() => {
-    const fileTypes = ['geoSpatial', 'regionalAuthority', 'supportSite', 'ldgLedger'];
+    const fileTypes = ['geoSpatial', 'regionalAuthority', 'supportSite', 'ldgLedger', 'softLaunch'];
     const fileLabels = {
       geoSpatial: 'Geo-Spatial LDG',
       regionalAuthority: 'Regional Authority',
       supportSite: 'Support Site Analytics',
-      ldgLedger: 'LDG Onboarding Ledger'
+      ldgLedger: 'LDG Onboarding Ledger',
+      softLaunch: 'Soft Launch'
     };
 
     let totalCritical = 0;
@@ -1329,7 +1335,8 @@ export default function ClinicianConsolidationTool() {
     geoSpatial: false,
     regionalAuthority: false,
     supportSite: false,
-    ldgLedger: false
+    ldgLedger: false,
+    softLaunch: false
   });
 
   // File upload component
@@ -1567,6 +1574,11 @@ export default function ClinicianConsolidationTool() {
                 fileType="ldgLedger"
                 label="LDG Onboarding Ledger"
                 description="Onboarding completion and specialty pathways"
+              />
+              <FileUploadBox
+                fileType="softLaunch"
+                label="Soft Launch"
+                description="Soft launch onboarding and go-live tracking data"
               />
             </div>
 
