@@ -56,10 +56,51 @@ export default function ClinicianConsolidationTool() {
   // Expected columns for each file
   const expectedColumns = {
     geoSpatial: ['CPSO', 'e-Referral', 'Hospital', 'Postal Code', 'Lead/Reach', 'Region', 'LDG', 'LDG Lead Org', 'Specialty', 'Type of Specialty'],
-    regionalAuthority: ['clinicianProfessionalId', 'clinicianFirstName', 'clinicianSurname', 'siteNum', 'siteName', 'healthRegion', 'services', 'postalCode', 'eReferrals', 'eConsults'],
+    regionalAuthority: ['clinicianProfessionalId', 'clinicianFirstName', 'clinicianSurname', 'siteNum', 'siteName', 'healthRegion', 'services', 'postalCode', 'eReferrals', 'eConsults', 'DateOfAgreement', 'ClinicianType'],
     supportSite: ['siteNum', 'siteName', 'clinicianType', 'professionalId', 'userFullName', 'username', 'referralLastSent'],
     ldgLedger: ['First Name', 'Last Name', 'CPSO #', 'eReferral Solution', 'Ocean Site Number (eReferral Ontario only)', 'Directory Listing Name (eReferral Ontario only)', 'Role (Sender, Receiver, Both)', 'Primary Specialty Pathway', 'Date Onboarding Completed'],
     softLaunch: ['CPSO', 'CPSO #', 'Organization', 'Region', 'eReferral Engagement Status', 'Onboarding Ticket Number', 'eReferral Type', 'Specialty', 'EMR Integration or Portal', 'Ocean Site Number', 'Sending Registration Number(s)', 'Number of Sending Clinicians Onboarded', 'Receiving Registration Number(s)', 'Number of Receiving Clinicians Onboarded', 'Number of Support Staff Onboarded', 'Date RMS Admin Training Completed', 'Date End Users Training Completed', 'Go Live Date']
+  };
+
+  const splitDelimitedValues = (value) => {
+    return String(value || '')
+      .split(';')
+      .map(v => v.trim())
+      .filter(Boolean);
+  };
+
+  const transformRegionalAuthorityRows = (rows) => {
+    const getValue = (row, keys) => {
+      const key = keys.find(candidate => row[candidate] !== undefined && row[candidate] !== null && String(row[candidate]).trim() !== '');
+      return key ? row[key] : '';
+    };
+
+    return rows.flatMap((row) => {
+      const professionalId = getValue(row, ['clinicianProfessionalId', 'Professional ID']);
+      const rawFirstName = getValue(row, ['clinicianFirstName']);
+      const rawLastName = getValue(row, ['clinicianSurname']);
+      const fullName = String(getValue(row, ['Name'])).trim();
+
+      const parsedFirstName = fullName.split(/\s+/)[0] || '';
+      const parsedLastName = fullName.split(/\s+/).slice(1).join(' ');
+      const firstName = rawFirstName || parsedFirstName;
+      const lastName = rawLastName || parsedLastName;
+
+      const siteNums = splitDelimitedValues(getValue(row, ['siteNum', 'Site Numbers']));
+      const siteNames = splitDelimitedValues(getValue(row, ['siteName', 'Site Names']));
+      const maxRows = Math.max(siteNums.length, siteNames.length, 1);
+
+      return Array.from({ length: maxRows }, (_, idx) => ({
+        ...row,
+        clinicianProfessionalId: professionalId,
+        clinicianFirstName: firstName,
+        clinicianSurname: lastName,
+        siteNum: siteNums[idx] || '',
+        siteName: siteNames[idx] || '',
+        DateOfAgreement: row['DateOfAgreement'] || '',
+        ClinicianType: row['ClinicianType'] || ''
+      }));
+    });
   };
 
   // Parse uploaded file
@@ -82,21 +123,38 @@ export default function ClinicianConsolidationTool() {
 
           const sheet = workbook.Sheets[sheetName];
           const jsonData = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+          const processedData = fileType === 'regionalAuthority' ? transformRegionalAuthorityRows(jsonData) : jsonData;
 
           // Validate columns
           const fileWarnings = [];
           const actualColumns = jsonData.length > 0 ? Object.keys(jsonData[0]) : [];
           const expected = expectedColumns[fileType];
 
-          const missingColumns = expected.filter(col =>
+          let missingColumns = expected.filter(col =>
             !actualColumns.some(actual => actual.toLowerCase().trim() === col.toLowerCase().trim())
           );
+
+          if (fileType === 'regionalAuthority') {
+            const normalizedColumns = new Set(actualColumns.map(col => col.toLowerCase().trim()));
+            const regionalAliases = {
+              clinicianProfessionalId: ['clinicianprofessionalid', 'professional id'],
+              clinicianFirstName: ['clinicianfirstname', 'name'],
+              clinicianSurname: ['cliniciansurname', 'name'],
+              siteNum: ['sitenum', 'site numbers'],
+              siteName: ['sitename', 'site names']
+            };
+
+            missingColumns = expected.filter(col => {
+              const aliases = regionalAliases[col] || [col.toLowerCase().trim()];
+              return !aliases.some(alias => normalizedColumns.has(alias));
+            });
+          }
 
           if (missingColumns.length > 0) {
             fileWarnings.push(`Missing expected columns: ${missingColumns.join(', ')}`);
           }
 
-          resolve({ data: jsonData, warnings: fileWarnings });
+          resolve({ data: processedData, warnings: fileWarnings });
         } catch (error) {
           reject(new Error(`Failed to parse file: ${error.message}`));
         }
@@ -1152,7 +1210,7 @@ export default function ClinicianConsolidationTool() {
         Professional_ID: cpso,
         First_Name: row['clinicianFirstName'] || (geoData ? '' : ''),
         Last_Name: row['clinicianSurname'] || (geoData ? '' : ''),
-        Clinician_Type: '',
+        Clinician_Type: row['ClinicianType'] || '',
         CPSO_Specialty: geoData?.specialty || row['services'] || '',
         Type_of_Specialty: geoData?.typeOfSpecialty || '',
         Specialty_Pathway: 'Value not contained in Source files',
@@ -1168,6 +1226,7 @@ export default function ClinicianConsolidationTool() {
         Lead_Reach: geoData?.leadReach || '',
         Role: '',
         Date_Onboarded: '',
+        Date_of_Agreement: row['DateOfAgreement'] || '',
         Training_Date: 'Value not contained in Source files',
         Last_Referral_Sent: '',
         Soft_Launch_Organization: '',
@@ -1260,6 +1319,7 @@ export default function ClinicianConsolidationTool() {
         Lead_Reach: geoData?.leadReach || '',
         Role: '',
         Date_Onboarded: '',
+        Date_of_Agreement: '',
         Training_Date: 'Value not contained in Source files',
         Last_Referral_Sent: row['referralLastSent'] || '',
         Soft_Launch_Organization: '',
@@ -1357,6 +1417,7 @@ export default function ClinicianConsolidationTool() {
         Lead_Reach: geoData?.leadReach || '',
         Role: row['Role (Sender, Receiver, Both)'] || '',
         Date_Onboarded: row['Date Onboarding Completed'] || '',
+        Date_of_Agreement: '',
         Training_Date: 'Value not contained in Source files',
         Last_Referral_Sent: '',
         Soft_Launch_Organization: '',
