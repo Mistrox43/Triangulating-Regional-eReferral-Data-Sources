@@ -1029,6 +1029,11 @@ export default function ClinicianConsolidationTool() {
     // Track unique clinician-site combinations (CPSO + Site Number only)
     const recordKey = (cpso, siteNum) => `${cpso}|${siteNum}`;
     const processedKeys = new Set();
+    const appendDataSource = (record, source) => {
+      if (!record.Data_Sources.includes(source)) {
+        record.Data_Sources += `,${source}`;
+      }
+    };
 
     // Process Regional Authority data (Specialists)
     data.regionalAuthority.forEach(row => {
@@ -1116,9 +1121,7 @@ export default function ClinicianConsolidationTool() {
         allRecords[existingIdx].Last_Referral_Sent = row['referralLastSent'] || '';
         // Only update Clinician_Type if not already set
         allRecords[existingIdx].Clinician_Type = allRecords[existingIdx].Clinician_Type || row['clinicianType'] || '';
-        if (!allRecords[existingIdx].Data_Sources.includes('Support Site')) {
-          allRecords[existingIdx].Data_Sources += ',Support Site';
-        }
+        appendDataSource(allRecords[existingIdx], 'Support Site');
         return;
       }
 
@@ -1207,9 +1210,7 @@ export default function ClinicianConsolidationTool() {
             allRecords[existingIdx].Date_Onboarded = newDate;
           }
         }
-        if (!allRecords[existingIdx].Data_Sources.includes('LDG Ledger')) {
-          allRecords[existingIdx].Data_Sources += ',LDG Ledger';
-        }
+        appendDataSource(allRecords[existingIdx], 'LDG Ledger');
         return;
       }
 
@@ -1256,6 +1257,84 @@ export default function ClinicianConsolidationTool() {
         Exclusion_Reason: '',
         In_GeoSpatial_LDG: inGeoSpatial,
         Data_Sources: inGeoSpatial ? 'Geo-Spatial,LDG Ledger' : 'LDG Ledger',
+        _specialty: geoData?.specialty || 'Unknown'
+      };
+
+      allRecords.push(record);
+    });
+
+    // Process Soft Launch
+    (data.softLaunch || []).forEach(row => {
+      const cpso = normalizeCPSO(row['CPSO #']);
+      if (!cpso) return;
+
+      const siteNum = row['Ocean Site Number'] || '';
+      const geoData = geoSpatialMap.get(cpso);
+      const key = recordKey(cpso, siteNum);
+
+      // Check if record already exists by CPSO + Site (consistent with Support Site and LDG Ledger)
+      const existingIdx = allRecords.findIndex(r =>
+        r.Professional_ID === cpso && r.Ocean_Site_Number === siteNum
+      );
+
+      if (existingIdx >= 0) {
+        appendDataSource(allRecords[existingIdx], 'Soft Launch');
+
+        // Soft Launch is a backfill source for missing values only.
+        allRecords[existingIdx].First_Name = allRecords[existingIdx].First_Name || row['First Name'] || '';
+        allRecords[existingIdx].Last_Name = allRecords[existingIdx].Last_Name || row['Last Name'] || '';
+        allRecords[existingIdx].Ocean_Site_Name = allRecords[existingIdx].Ocean_Site_Name || row['Ocean Site Name'] || '';
+        allRecords[existingIdx].Solution_Type = allRecords[existingIdx].Solution_Type || row['eReferral Solution'] || '';
+        allRecords[existingIdx].Role = allRecords[existingIdx].Role || row['Role'] || '';
+        allRecords[existingIdx].Specialty_Pathway = allRecords[existingIdx].Specialty_Pathway || row['Primary Specialty Pathway'] || '';
+        allRecords[existingIdx].Date_Onboarded = allRecords[existingIdx].Date_Onboarded || row['Date Onboarding Completed'] || '';
+
+        return;
+      }
+
+      if (processedKeys.has(key)) return;
+      processedKeys.add(key);
+
+      const inGeoSpatial = !!geoData;
+
+      if (!inGeoSpatial) {
+        qualityIssues.push({
+          type: 'NOT_IN_GEOSPATIAL',
+          source: 'Soft Launch',
+          cpso,
+          name: `${row['First Name'] || ''} ${row['Last Name'] || ''}`.trim(),
+          details: `CPSO ${cpso} found in Soft Launch but not in Geo-Spatial LDG`
+        });
+      }
+
+      const record = {
+        Professional_ID: cpso,
+        First_Name: row['First Name'] || '',
+        Last_Name: row['Last Name'] || '',
+        Clinician_Type: '',
+        CPSO_Specialty: geoData?.specialty || '',
+        Type_of_Specialty: geoData?.typeOfSpecialty || '',
+        Specialty_Pathway: row['Primary Specialty Pathway'] || '',
+        LDG_Name: geoData?.ldg || '',
+        LDG_Lead_Org: geoData?.ldgLeadOrg || '',
+        Region: geoData?.region || '',
+        Network: '',
+        Solution_Type: row['eReferral Solution'] || '',
+        Ocean_Site_Number: siteNum,
+        Ocean_Site_Name: row['Ocean Site Name'] || '',
+        Hospital: geoData?.hospital || '',
+        Address_Postal: geoData?.postalCode || '',
+        Lead_Reach: geoData?.leadReach || '',
+        Role: row['Role'] || '',
+        Date_Onboarded: row['Date Onboarding Completed'] || '',
+        Training_Date: 'Value not contained in Source files',
+        Last_Referral_Sent: '',
+        Regional_Dedupe_Flag: false,
+        Provincial_Dedupe_Flag: false,
+        Exclusion_Flag: false,
+        Exclusion_Reason: '',
+        In_GeoSpatial_LDG: inGeoSpatial,
+        Data_Sources: inGeoSpatial ? 'Geo-Spatial,Soft Launch' : 'Soft Launch',
         _specialty: geoData?.specialty || 'Unknown'
       };
 
