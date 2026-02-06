@@ -59,7 +59,7 @@ export default function ClinicianConsolidationTool() {
     regionalAuthority: ['clinicianProfessionalId', 'clinicianFirstName', 'clinicianSurname', 'siteNum', 'siteName', 'healthRegion', 'services', 'postalCode', 'eReferrals', 'eConsults'],
     supportSite: ['siteNum', 'siteName', 'clinicianType', 'professionalId', 'userFullName', 'username', 'referralLastSent'],
     ldgLedger: ['First Name', 'Last Name', 'CPSO #', 'eReferral Solution', 'Ocean Site Number (eReferral Ontario only)', 'Directory Listing Name (eReferral Ontario only)', 'Role (Sender, Receiver, Both)', 'Primary Specialty Pathway', 'Date Onboarding Completed'],
-    softLaunch: ['Organization', 'Region', 'eReferral Engagement Status', 'Onboarding Ticket Number', 'eReferral Type', 'Specialty', 'EMR Integration or Portal', 'CPSO #', 'Ocean Site Number', 'Sending Registration Number(s)', 'Number of Sending Clinicians Onboarded', 'Receiving Registration Number(s)', 'Number of Receiving Clinicians Onboarded', 'Number of Support Staff Onboarded', 'Date RMS Admin Training Completed', 'Date End Users Training Completed', 'Go Live Date']
+    softLaunch: ['CPSO', 'CPSO #', 'Organization', 'Region', 'eReferral Engagement Status', 'Onboarding Ticket Number', 'eReferral Type', 'Specialty', 'EMR Integration or Portal', 'Ocean Site Number', 'Sending Registration Number(s)', 'Number of Sending Clinicians Onboarded', 'Receiving Registration Number(s)', 'Number of Receiving Clinicians Onboarded', 'Number of Support Staff Onboarded', 'Date RMS Admin Training Completed', 'Date End Users Training Completed', 'Go Live Date']
   };
 
   // Parse uploaded file
@@ -667,6 +667,62 @@ export default function ClinicianConsolidationTool() {
           })
         });
       }
+
+    } else if (fileType === 'softLaunch') {
+      const blankCPSO = rows.filter(r => !String(r['CPSO'] || '').trim());
+      if (blankCPSO.length > 0) {
+        checks.critical.push({
+          type: 'BLANK_CPSO',
+          label: 'Blank CPSO values',
+          count: blankCPSO.length,
+          impact: 'These rows will be skipped because matching requires CPSO.',
+          sampleRows: blankCPSO.slice(0, 3).map(r => `Organization ${r['Organization'] || 'N/A'} (Row ${rows.indexOf(r) + 2})`)
+        });
+      }
+
+      const nonNumericCPSO = rows.filter(r => {
+        const val = String(r['CPSO'] || '').trim();
+        return val && !/^\d+$/.test(val);
+      });
+      if (nonNumericCPSO.length > 0) {
+        checks.critical.push({
+          type: 'NON_NUMERIC_CPSO',
+          label: 'Non-numeric CPSO values',
+          count: nonNumericCPSO.length,
+          impact: 'CPSO values should contain only numbers. These rows may fail to match output records.',
+          sampleRows: nonNumericCPSO.slice(0, 3).map(r => `"${r['CPSO']}" (Row ${rows.indexOf(r) + 2})`)
+        });
+      }
+
+      const blankGoLiveDate = rows.filter(r => !String(r['Go Live Date'] || '').trim());
+      if (blankGoLiveDate.length > 0) {
+        checks.warnings.push({
+          type: 'BLANK_GO_LIVE_DATE',
+          label: 'Blank Go Live Date values',
+          count: blankGoLiveDate.length,
+          impact: 'Date_Onboarded will not be populated from Soft Launch for these rows.',
+          sampleRows: blankGoLiveDate.slice(0, 3).map(r => `CPSO ${r['CPSO'] || 'N/A'}`)
+        });
+      }
+
+      const duplicateCPSO = {};
+      rows.forEach((row, idx) => {
+        const cpso = normalizeCPSO(row['CPSO']);
+        if (!cpso) return;
+        if (!duplicateCPSO[cpso]) duplicateCPSO[cpso] = [];
+        duplicateCPSO[cpso].push(idx + 2);
+      });
+      const duplicateCPSORows = Object.entries(duplicateCPSO).filter(([_, rowNums]) => rowNums.length > 1);
+      if (duplicateCPSORows.length > 0) {
+        checks.warnings.push({
+          type: 'DUPLICATE_CPSO',
+          label: 'Duplicate CPSO values',
+          count: duplicateCPSORows.reduce((sum, [_, rows]) => sum + rows.length, 0),
+          uniqueCount: duplicateCPSORows.length,
+          impact: 'All rows are applied in sequence and later rows may overwrite prior Soft Launch values for the same CPSO.',
+          sampleRows: duplicateCPSORows.slice(0, 3).map(([cpso, rowNums]) => `CPSO ${cpso}: rows ${rowNums.join(', ')}`)
+        });
+      }
     }
 
     // Calculate overall status
@@ -896,6 +952,29 @@ export default function ClinicianConsolidationTool() {
           issues.push('Duplicate CPSO # + Ocean Site Number combination');
         }
       }
+
+    } else if (fileType === 'softLaunch') {
+      const cpso = String(row['CPSO'] || '').trim();
+
+      if (!cpso) {
+        issues.push('Blank CPSO');
+      }
+
+      if (cpso && !/^\d+$/.test(cpso)) {
+        issues.push('Non-numeric CPSO');
+      }
+
+      if (!String(row['Go Live Date'] || '').trim()) {
+        issues.push('Blank Go Live Date');
+      }
+
+      if (cpso) {
+        const normCPSO = normalizeCPSO(cpso);
+        const duplicateCount = allRows.filter(r => normalizeCPSO(r['CPSO']) === normCPSO).length;
+        if (duplicateCount > 1) {
+          issues.push('Duplicate CPSO in Soft Launch');
+        }
+      }
     }
 
     return issues;
@@ -971,6 +1050,15 @@ export default function ClinicianConsolidationTool() {
   const normalizeCPSO = (cpso) => {
     if (!cpso) return '';
     return String(cpso).replace(/\s/g, '').trim();
+  };
+
+  // Normalize eReferral type values so explicit role mapping is resilient to punctuation/casing
+  const normalizeEReferralType = (value) => {
+    return String(value || '')
+      .toLowerCase()
+      .replace(/[^a-z\s]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
   };
 
   // Parse full name into first and last name
@@ -1082,6 +1170,16 @@ export default function ClinicianConsolidationTool() {
         Date_Onboarded: '',
         Training_Date: 'Value not contained in Source files',
         Last_Referral_Sent: '',
+        Soft_Launch_Organization: '',
+        Soft_Launch_EMR_or_Portal: '',
+        Soft_Launch_Specialty: '',
+        Soft_Launch_Engagement_Status: '',
+        Soft_Launch_Ticket_Number: '',
+        Soft_Launch_eReferral_Type: '',
+        Soft_Launch_RMS_Admin_Training_Date: '',
+        Soft_Launch_End_User_Training_Date: '',
+        Soft_Launch_Sending_Onboarding_Count: '',
+        Soft_Launch_Receiving_Onboarding_Count: '',
         Regional_Dedupe_Flag: false,
         Provincial_Dedupe_Flag: false,
         Exclusion_Flag: false,
@@ -1164,6 +1262,16 @@ export default function ClinicianConsolidationTool() {
         Date_Onboarded: '',
         Training_Date: 'Value not contained in Source files',
         Last_Referral_Sent: row['referralLastSent'] || '',
+        Soft_Launch_Organization: '',
+        Soft_Launch_EMR_or_Portal: '',
+        Soft_Launch_Specialty: '',
+        Soft_Launch_Engagement_Status: '',
+        Soft_Launch_Ticket_Number: '',
+        Soft_Launch_eReferral_Type: '',
+        Soft_Launch_RMS_Admin_Training_Date: '',
+        Soft_Launch_End_User_Training_Date: '',
+        Soft_Launch_Sending_Onboarding_Count: '',
+        Soft_Launch_Receiving_Onboarding_Count: '',
         Regional_Dedupe_Flag: false,
         Provincial_Dedupe_Flag: false,
         Exclusion_Flag: false,
@@ -1251,6 +1359,16 @@ export default function ClinicianConsolidationTool() {
         Date_Onboarded: row['Date Onboarding Completed'] || '',
         Training_Date: 'Value not contained in Source files',
         Last_Referral_Sent: '',
+        Soft_Launch_Organization: '',
+        Soft_Launch_EMR_or_Portal: '',
+        Soft_Launch_Specialty: '',
+        Soft_Launch_Engagement_Status: '',
+        Soft_Launch_Ticket_Number: '',
+        Soft_Launch_eReferral_Type: '',
+        Soft_Launch_RMS_Admin_Training_Date: '',
+        Soft_Launch_End_User_Training_Date: '',
+        Soft_Launch_Sending_Onboarding_Count: '',
+        Soft_Launch_Receiving_Onboarding_Count: '',
         Regional_Dedupe_Flag: false,
         Provincial_Dedupe_Flag: false,
         Exclusion_Flag: false,
@@ -1263,82 +1381,64 @@ export default function ClinicianConsolidationTool() {
       allRecords.push(record);
     });
 
-    // Process Soft Launch
-    (data.softLaunch || []).forEach(row => {
-      const cpso = normalizeCPSO(row['CPSO #']);
+    // Process Soft Launch data
+    const eReferralTypeToRole = {
+      'sending organization': 'Sender',
+      'receiving organization': 'Receiver'
+    };
+
+    data.softLaunch.forEach(row => {
+      const cpso = normalizeCPSO(row['CPSO'] || row['CPSO #']);
       if (!cpso) return;
 
-      const siteNum = row['Ocean Site Number'] || '';
-      const geoData = geoSpatialMap.get(cpso);
-      const key = recordKey(cpso, siteNum);
+      const matchingIndices = allRecords
+        .map((record, idx) => ({ record, idx }))
+        .filter(({ record }) => record.Professional_ID === cpso)
+        .map(({ idx }) => idx);
 
-      // Check if record already exists by CPSO + Site (consistent with Support Site and LDG Ledger)
-      const existingIdx = allRecords.findIndex(r =>
-        r.Professional_ID === cpso && r.Ocean_Site_Number === siteNum
-      );
-
-      if (existingIdx >= 0) {
-        appendDataSource(allRecords[existingIdx], 'Soft Launch');
-
-        // Soft Launch is a backfill source for missing values only.
-        allRecords[existingIdx].First_Name = allRecords[existingIdx].First_Name || row['First Name'] || '';
-        allRecords[existingIdx].Last_Name = allRecords[existingIdx].Last_Name || row['Last Name'] || '';
-        allRecords[existingIdx].Ocean_Site_Name = allRecords[existingIdx].Ocean_Site_Name || row['Ocean Site Name'] || '';
-        allRecords[existingIdx].Solution_Type = allRecords[existingIdx].Solution_Type || row['eReferral Solution'] || '';
-        allRecords[existingIdx].Role = allRecords[existingIdx].Role || row['Role'] || '';
-        allRecords[existingIdx].Specialty_Pathway = allRecords[existingIdx].Specialty_Pathway || row['Primary Specialty Pathway'] || '';
-        allRecords[existingIdx].Date_Onboarded = allRecords[existingIdx].Date_Onboarded || row['Date Onboarding Completed'] || '';
-
+      if (matchingIndices.length === 0) {
         return;
       }
 
-      if (processedKeys.has(key)) return;
-      processedKeys.add(key);
+      matchingIndices.forEach(idx => {
+        const record = allRecords[idx];
 
-      const inGeoSpatial = !!geoData;
+        // Recommended primary mapping
+        if (row['Go Live Date']) {
+          record.Date_Onboarded = row['Go Live Date'];
+        }
 
-      if (!inGeoSpatial) {
-        qualityIssues.push({
-          type: 'NOT_IN_GEOSPATIAL',
-          source: 'Soft Launch',
-          cpso,
-          name: `${row['First Name'] || ''} ${row['Last Name'] || ''}`.trim(),
-          details: `CPSO ${cpso} found in Soft Launch but not in Geo-Spatial LDG`
-        });
-      }
+        // Backfill region only when blank
+        if (!String(record.Region || '').trim() && row['Region']) {
+          record.Region = row['Region'];
+        }
 
-      const record = {
-        Professional_ID: cpso,
-        First_Name: row['First Name'] || '',
-        Last_Name: row['Last Name'] || '',
-        Clinician_Type: '',
-        CPSO_Specialty: geoData?.specialty || '',
-        Type_of_Specialty: geoData?.typeOfSpecialty || '',
-        Specialty_Pathway: row['Primary Specialty Pathway'] || '',
-        LDG_Name: geoData?.ldg || '',
-        LDG_Lead_Org: geoData?.ldgLeadOrg || '',
-        Region: geoData?.region || '',
-        Network: '',
-        Solution_Type: row['eReferral Solution'] || '',
-        Ocean_Site_Number: siteNum,
-        Ocean_Site_Name: row['Ocean Site Name'] || '',
-        Hospital: geoData?.hospital || '',
-        Address_Postal: geoData?.postalCode || '',
-        Lead_Reach: geoData?.leadReach || '',
-        Role: row['Role'] || '',
-        Date_Onboarded: row['Date Onboarding Completed'] || '',
-        Training_Date: 'Value not contained in Source files',
-        Last_Referral_Sent: '',
-        Regional_Dedupe_Flag: false,
-        Provincial_Dedupe_Flag: false,
-        Exclusion_Flag: false,
-        Exclusion_Reason: '',
-        In_GeoSpatial_LDG: inGeoSpatial,
-        Data_Sources: inGeoSpatial ? 'Geo-Spatial,Soft Launch' : 'Soft Launch',
-        _specialty: geoData?.specialty || 'Unknown'
-      };
+        // Map eReferral Type to Role only for explicit value mappings
+        const eReferralTypeRaw = String(row['eReferral Type'] || '').trim();
+        const normalizedEReferralType = normalizeEReferralType(eReferralTypeRaw);
+        const mappedRole = eReferralTypeToRole[normalizedEReferralType];
+        if (mappedRole && !String(record.Role || '').trim()) {
+          record.Role = mappedRole;
+        }
 
-      allRecords.push(record);
+        // Always carry forward soft launch fields without blanking previously captured values
+        record.Soft_Launch_Organization = row['Organization'] || record.Soft_Launch_Organization;
+        record.Soft_Launch_EMR_or_Portal = row['EMR Integration or Portal'] || record.Soft_Launch_EMR_or_Portal;
+        record.Soft_Launch_Specialty = row['Specialty'] || record.Soft_Launch_Specialty;
+        record.Soft_Launch_Engagement_Status = row['eReferral Engagement Status'] || record.Soft_Launch_Engagement_Status;
+        record.Soft_Launch_Ticket_Number = row['Onboarding Ticket Number'] || record.Soft_Launch_Ticket_Number;
+        record.Soft_Launch_eReferral_Type = eReferralTypeRaw || record.Soft_Launch_eReferral_Type;
+
+        // Optional audit fields
+        record.Soft_Launch_RMS_Admin_Training_Date = row['RMS Admin Training Date'] || record.Soft_Launch_RMS_Admin_Training_Date;
+        record.Soft_Launch_End_User_Training_Date = row['End User Training Date'] || record.Soft_Launch_End_User_Training_Date;
+        record.Soft_Launch_Sending_Onboarding_Count = row['Sending Onboarding Count'] || record.Soft_Launch_Sending_Onboarding_Count;
+        record.Soft_Launch_Receiving_Onboarding_Count = row['Receiving Onboarding Count'] || record.Soft_Launch_Receiving_Onboarding_Count;
+
+        if (!record.Data_Sources.includes('Soft Launch')) {
+          record.Data_Sources += ',Soft Launch';
+        }
+      });
     });
 
     // Sort and set dedupe flags
@@ -1786,7 +1886,7 @@ export default function ClinicianConsolidationTool() {
               <FileUploadBox
                 fileType="softLaunch"
                 label="Soft Launch"
-                description="Soft launch onboarding and go-live tracking data"
+                description="Soft launch onboarding, engagement, and go-live metadata"
               />
             </div>
 
