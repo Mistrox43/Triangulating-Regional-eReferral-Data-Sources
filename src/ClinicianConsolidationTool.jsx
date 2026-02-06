@@ -538,6 +538,62 @@ export default function ClinicianConsolidationTool() {
           })
         });
       }
+
+    } else if (fileType === 'softLaunch') {
+      const blankCPSO = rows.filter(r => !String(r['CPSO'] || '').trim());
+      if (blankCPSO.length > 0) {
+        checks.critical.push({
+          type: 'BLANK_CPSO',
+          label: 'Blank CPSO values',
+          count: blankCPSO.length,
+          impact: 'These rows will be skipped because matching requires CPSO.',
+          sampleRows: blankCPSO.slice(0, 3).map(r => `Organization ${r['Organization'] || 'N/A'} (Row ${rows.indexOf(r) + 2})`)
+        });
+      }
+
+      const nonNumericCPSO = rows.filter(r => {
+        const val = String(r['CPSO'] || '').trim();
+        return val && !/^\d+$/.test(val);
+      });
+      if (nonNumericCPSO.length > 0) {
+        checks.critical.push({
+          type: 'NON_NUMERIC_CPSO',
+          label: 'Non-numeric CPSO values',
+          count: nonNumericCPSO.length,
+          impact: 'CPSO values should contain only numbers. These rows may fail to match output records.',
+          sampleRows: nonNumericCPSO.slice(0, 3).map(r => `"${r['CPSO']}" (Row ${rows.indexOf(r) + 2})`)
+        });
+      }
+
+      const blankGoLiveDate = rows.filter(r => !String(r['Go Live Date'] || '').trim());
+      if (blankGoLiveDate.length > 0) {
+        checks.warnings.push({
+          type: 'BLANK_GO_LIVE_DATE',
+          label: 'Blank Go Live Date values',
+          count: blankGoLiveDate.length,
+          impact: 'Date_Onboarded will not be populated from Soft Launch for these rows.',
+          sampleRows: blankGoLiveDate.slice(0, 3).map(r => `CPSO ${r['CPSO'] || 'N/A'}`)
+        });
+      }
+
+      const duplicateCPSO = {};
+      rows.forEach((row, idx) => {
+        const cpso = normalizeCPSO(row['CPSO']);
+        if (!cpso) return;
+        if (!duplicateCPSO[cpso]) duplicateCPSO[cpso] = [];
+        duplicateCPSO[cpso].push(idx + 2);
+      });
+      const duplicateCPSORows = Object.entries(duplicateCPSO).filter(([_, rowNums]) => rowNums.length > 1);
+      if (duplicateCPSORows.length > 0) {
+        checks.warnings.push({
+          type: 'DUPLICATE_CPSO',
+          label: 'Duplicate CPSO values',
+          count: duplicateCPSORows.reduce((sum, [_, rows]) => sum + rows.length, 0),
+          uniqueCount: duplicateCPSORows.length,
+          impact: 'All rows are applied in sequence and later rows may overwrite prior Soft Launch values for the same CPSO.',
+          sampleRows: duplicateCPSORows.slice(0, 3).map(([cpso, rowNums]) => `CPSO ${cpso}: rows ${rowNums.join(', ')}`)
+        });
+      }
     }
 
     // Calculate overall status
@@ -765,6 +821,29 @@ export default function ClinicianConsolidationTool() {
         }).length;
         if (duplicateCount > 1) {
           issues.push('Duplicate CPSO # + Ocean Site Number combination');
+        }
+      }
+
+    } else if (fileType === 'softLaunch') {
+      const cpso = String(row['CPSO'] || '').trim();
+
+      if (!cpso) {
+        issues.push('Blank CPSO');
+      }
+
+      if (cpso && !/^\d+$/.test(cpso)) {
+        issues.push('Non-numeric CPSO');
+      }
+
+      if (!String(row['Go Live Date'] || '').trim()) {
+        issues.push('Blank Go Live Date');
+      }
+
+      if (cpso) {
+        const normCPSO = normalizeCPSO(cpso);
+        const duplicateCount = allRows.filter(r => normalizeCPSO(r['CPSO']) === normCPSO).length;
+        if (duplicateCount > 1) {
+          issues.push('Duplicate CPSO in Soft Launch');
         }
       }
     }
