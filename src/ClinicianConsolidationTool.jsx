@@ -59,7 +59,7 @@ export default function ClinicianConsolidationTool() {
     regionalAuthority: ['clinicianProfessionalId', 'clinicianFirstName', 'clinicianSurname', 'siteNum', 'siteName', 'healthRegion', 'services', 'postalCode', 'eReferrals', 'eConsults'],
     supportSite: ['siteNum', 'siteName', 'clinicianType', 'professionalId', 'userFullName', 'username', 'referralLastSent'],
     ldgLedger: ['First Name', 'Last Name', 'CPSO #', 'eReferral Solution', 'Ocean Site Number (eReferral Ontario only)', 'Directory Listing Name (eReferral Ontario only)', 'Role (Sender, Receiver, Both)', 'Primary Specialty Pathway', 'Date Onboarding Completed'],
-    softLaunch: ['CPSO', 'Organization', 'EMR Integration or Portal', 'Specialty', 'eReferral Engagement Status', 'Onboarding Ticket Number', 'Go Live Date', 'Region', 'eReferral Type']
+    softLaunch: ['CPSO', 'CPSO #', 'Organization', 'Region', 'eReferral Engagement Status', 'Onboarding Ticket Number', 'eReferral Type', 'Specialty', 'EMR Integration or Portal', 'Ocean Site Number', 'Sending Registration Number(s)', 'Number of Sending Clinicians Onboarded', 'Receiving Registration Number(s)', 'Number of Receiving Clinicians Onboarded', 'Number of Support Staff Onboarded', 'Date RMS Admin Training Completed', 'Date End Users Training Completed', 'Go Live Date']
   };
 
   // Parse uploaded file
@@ -413,6 +413,135 @@ export default function ClinicianConsolidationTool() {
             const [profId, siteNum] = key.split('|');
             return `ID ${profId} + Site ${siteNum || '(blank)'}: rows ${rowNums.join(', ')}`;
           })
+        });
+      }
+
+    } else if (fileType === 'softLaunch') {
+      // Critical: Blank CPSO #
+      const blankCPSO = rows.filter(r => !String(r['CPSO #'] || '').trim());
+      if (blankCPSO.length > 0) {
+        checks.critical.push({
+          type: 'BLANK_CPSO',
+          label: 'Blank CPSO # values',
+          count: blankCPSO.length,
+          impact: 'These rows cannot be reliably matched and may fail downstream processing.',
+          sampleRows: blankCPSO.slice(0, 3).map(r => `Row ${rows.indexOf(r) + 2}`)
+        });
+      }
+
+      // Critical: Non-numeric CPSO # values
+      const nonNumericCPSO = rows.filter(r => {
+        const val = String(r['CPSO #'] || '').trim();
+        return val && !/^\d+$/.test(val);
+      });
+      if (nonNumericCPSO.length > 0) {
+        checks.critical.push({
+          type: 'NON_NUMERIC_CPSO',
+          label: 'Non-numeric CPSO # values',
+          count: nonNumericCPSO.length,
+          impact: 'CPSO # values should contain only numbers for reliable matching.',
+          sampleRows: nonNumericCPSO.slice(0, 3).map(r => `"${r['CPSO #']}" (Row ${rows.indexOf(r) + 2})`)
+        });
+      }
+
+      // Warning: Blank Ocean Site Number
+      const blankSite = rows.filter(r => !String(r['Ocean Site Number'] || '').trim());
+      if (blankSite.length > 0) {
+        checks.warnings.push({
+          type: 'BLANK_OCEAN_SITE_NUMBER',
+          label: 'Blank Ocean Site Number values',
+          count: blankSite.length,
+          impact: 'Records may not match to site-level data when Ocean Site Number is missing.',
+          sampleRows: blankSite.slice(0, 3).map(r => `CPSO ${r['CPSO #'] || 'N/A'}`)
+        });
+      }
+
+      // Warning: Non-numeric Ocean Site Number values
+      const nonNumericSite = rows.filter(r => {
+        const val = String(r['Ocean Site Number'] || '').trim();
+        return val && !/^\d+$/.test(val);
+      });
+      if (nonNumericSite.length > 0) {
+        checks.warnings.push({
+          type: 'NON_NUMERIC_OCEAN_SITE_NUMBER',
+          label: 'Non-numeric Ocean Site Number values',
+          count: nonNumericSite.length,
+          impact: 'Ocean Site Number is expected to be numeric; non-numeric values may fail matching.',
+          sampleRows: nonNumericSite.slice(0, 3).map(r => `"${r['Ocean Site Number']}" (Row ${rows.indexOf(r) + 2})`)
+        });
+      }
+
+      // Warning: Duplicate CPSO # + Ocean Site Number combinations
+      const cpsoSiteCombos = {};
+      rows.forEach((row, idx) => {
+        const cpso = String(row['CPSO #'] || '').trim();
+        const siteNum = String(row['Ocean Site Number'] || '').trim();
+        const key = `${cpso}|${siteNum}`;
+        if (!cpsoSiteCombos[key]) {
+          cpsoSiteCombos[key] = [];
+        }
+        cpsoSiteCombos[key].push(idx + 2);
+      });
+      const duplicateCombos = Object.entries(cpsoSiteCombos).filter(([_, rowNums]) => rowNums.length > 1);
+      if (duplicateCombos.length > 0) {
+        const totalDupeRows = duplicateCombos.reduce((sum, [_, rowNums]) => sum + rowNums.length, 0);
+        checks.warnings.push({
+          type: 'DUPLICATE_CPSO_SITE',
+          label: 'Duplicate CPSO # + Ocean Site Number combinations',
+          count: totalDupeRows,
+          impact: 'Duplicate clinician/site combinations may indicate redundant records.',
+          sampleRows: duplicateCombos.slice(0, 3).map(([key, rowNums]) => {
+            const [cpso, siteNum] = key.split('|');
+            return `CPSO ${cpso || '(blank)'} + Site ${siteNum || '(blank)'}: rows ${rowNums.join(', ')}`;
+          })
+        });
+      }
+
+      // Warning: Blank Go Live Date
+      const blankGoLiveDate = rows.filter(r => !String(r['Go Live Date'] || '').trim());
+      if (blankGoLiveDate.length > 0) {
+        checks.warnings.push({
+          type: 'BLANK_GO_LIVE_DATE',
+          label: 'Blank Go Live Date values',
+          count: blankGoLiveDate.length,
+          impact: 'Go-live tracking and reporting may be incomplete for these rows.',
+          sampleRows: blankGoLiveDate.slice(0, 3).map(r => `CPSO ${r['CPSO #'] || 'N/A'}`)
+        });
+      }
+
+      // Warning: Blank EMR Integration or Portal
+      const blankEmrIntegration = rows.filter(r => !String(r['EMR Integration or Portal'] || '').trim());
+      if (blankEmrIntegration.length > 0) {
+        checks.warnings.push({
+          type: 'BLANK_EMR_INTEGRATION_OR_PORTAL',
+          label: 'Blank EMR Integration or Portal values',
+          count: blankEmrIntegration.length,
+          impact: 'Integration method is missing and may reduce reporting quality.',
+          sampleRows: blankEmrIntegration.slice(0, 3).map(r => `CPSO ${r['CPSO #'] || 'N/A'}`)
+        });
+      }
+
+      // Warning: Blank Organization
+      const blankOrganization = rows.filter(r => !String(r['Organization'] || '').trim());
+      if (blankOrganization.length > 0) {
+        checks.warnings.push({
+          type: 'BLANK_ORGANIZATION',
+          label: 'Blank Organization values',
+          count: blankOrganization.length,
+          impact: 'Organization-level reporting may be incomplete for these rows.',
+          sampleRows: blankOrganization.slice(0, 3).map(r => `CPSO ${r['CPSO #'] || 'N/A'}`)
+        });
+      }
+
+      // Warning: Blank Specialty
+      const blankSpecialty = rows.filter(r => !String(r['Specialty'] || '').trim());
+      if (blankSpecialty.length > 0) {
+        checks.warnings.push({
+          type: 'BLANK_SPECIALTY',
+          label: 'Blank Specialty values',
+          count: blankSpecialty.length,
+          impact: 'Specialty-based reporting and categorization may be incomplete.',
+          sampleRows: blankSpecialty.slice(0, 3).map(r => `CPSO ${r['CPSO #'] || 'N/A'}`)
         });
       }
 
@@ -988,6 +1117,11 @@ export default function ClinicianConsolidationTool() {
     // Track unique clinician-site combinations (CPSO + Site Number only)
     const recordKey = (cpso, siteNum) => `${cpso}|${siteNum}`;
     const processedKeys = new Set();
+    const appendDataSource = (record, source) => {
+      if (!record.Data_Sources.includes(source)) {
+        record.Data_Sources += `,${source}`;
+      }
+    };
 
     // Process Regional Authority data (Specialists)
     data.regionalAuthority.forEach(row => {
@@ -1085,9 +1219,7 @@ export default function ClinicianConsolidationTool() {
         allRecords[existingIdx].Last_Referral_Sent = row['referralLastSent'] || '';
         // Only update Clinician_Type if not already set
         allRecords[existingIdx].Clinician_Type = allRecords[existingIdx].Clinician_Type || row['clinicianType'] || '';
-        if (!allRecords[existingIdx].Data_Sources.includes('Support Site')) {
-          allRecords[existingIdx].Data_Sources += ',Support Site';
-        }
+        appendDataSource(allRecords[existingIdx], 'Support Site');
         return;
       }
 
@@ -1186,9 +1318,7 @@ export default function ClinicianConsolidationTool() {
             allRecords[existingIdx].Date_Onboarded = newDate;
           }
         }
-        if (!allRecords[existingIdx].Data_Sources.includes('LDG Ledger')) {
-          allRecords[existingIdx].Data_Sources += ',LDG Ledger';
-        }
+        appendDataSource(allRecords[existingIdx], 'LDG Ledger');
         return;
       }
 
@@ -1258,7 +1388,7 @@ export default function ClinicianConsolidationTool() {
     };
 
     data.softLaunch.forEach(row => {
-      const cpso = normalizeCPSO(row['CPSO']);
+      const cpso = normalizeCPSO(row['CPSO'] || row['CPSO #']);
       if (!cpso) return;
 
       const matchingIndices = allRecords
